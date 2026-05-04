@@ -3,10 +3,10 @@ import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
 
 const COL_MAP = {
-  id:            ['ID', '№', 'No', 'NO', 'SCUEL事業所コード', 'SCUEL_ID', '施設コード', '医療機関コード'],
-  chain:         ['サービス_開設法人名', '法人_名称', '開設法人名', '会社名', '法人名', '開設者名'],
+  id:            ['SCUEL事業所コード', 'SCUEL_ID', 'ID', '№', 'No', 'NO', '施設コード', '医療機関コード'],
+  chain:         ['サービス_開設法人名', '法人_名称', '会社名', '法人名', '開設者名'],
   rep:           ['サービス_開設者氏名', 'サービス_管理者氏名', '代表者', '開設者氏名', '管理者氏名'],
-  name:          ['事業所_名称', '薬局名', '施設名称', '名称', 'サービス_事業所_名称'],
+  name:          ['事業所_名称', 'サービス_事業所_名称', '薬局名', '施設名称', '名称'],
   pref:          ['事業所_都道府県', '都道府県', '都道府県名'],
   city:          ['事業所_市区町村', '市区町村', '市区町村名'],
   addr:          ['事業所_住所', '住所', '所在地'],
@@ -99,9 +99,9 @@ export default function ImportModal({ onClose, onDone }) {
       if (ext === 'xlsx' || ext === 'xls') {
         setMsg('Excelファイルを解析中...')
         const buf = await file.arrayBuffer()
-        const wb  = XLSX.read(buf, { type: 'array', cellText: true, cellDates: false })
+        const wb  = XLSX.read(buf, { type: 'array', cellDates: false })
         const ws  = wb.Sheets[wb.SheetNames[0]]
-        rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false })
+        rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true })
       } else {
         setMsg('CSVファイルを解析中...')
         const text = await file.text()
