@@ -49,8 +49,8 @@ export default function App({ user }) {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const { data: phData } = await supabase.from('pharmacies').select('*').order('pref').limit(100000)
-      const { data: crData } = await supabase.from('call_records').select('*').limit(100000)
+      const { data: phData } = await supabase.from('pharmacies').select('*').order('pref').range(0, 59999)
+      const { data: crData } = await supabase.from('call_records').select('*').range(0, 59999)
       const ph = phData?.length ? phData : SAMPLE_PHARMACIES
       setPharmacies(ph)
       const callMap = {}
