@@ -14,6 +14,7 @@ export const STATUS_ICONS = {
   未着手: '◯', 架電済: '📞', 折り返し待ち: '⏳', 売手: '🏷', 買手: '🛒', 商談中: '💬', 架電NG: '🚫', NG: '✕', 成約: '★',
 }
 
+// 担当者はlocalStorageで上書き可能
 export const DEFAULT_MEMBERS = ['未割当','田中','鈴木','佐藤','山田','伊藤','渡辺']
 
 export function getMembers() {
