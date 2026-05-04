@@ -253,11 +253,16 @@ function MobileList({ calls, stats, filtered, fStatus, setFStatus, fPref, setFPr
         <div style={{ padding:16, display:'flex', flexDirection:'column', gap:16 }}>
           {/* 薬局情報 */}
           <div style={{ padding:14, borderRadius:10, background:'#1a2744' }}>
-            {selectedP.chain && <div style={{ fontSize:10, color:'#3b5280', marginBottom:4 }}>🏢 {selectedP.chain}</div>}
+            {selectedP.chain && <div style={{ fontSize:10, color:'#3b5280', marginBottom:2 }}>🏢 {selectedP.chain}</div>}
+            {selectedP.rep   && <div style={{ fontSize:10, color:'#3b5280', marginBottom:4 }}>👤 {selectedP.rep}</div>}
             <div style={{ fontSize:11, color:'#4a6490', marginBottom:8 }}>📍 {selectedP.addr}</div>
             <a href={`tel:${selectedP.phone}`} style={{ fontSize:18, color:'#60a5fa', fontWeight:800, textDecoration:'none', display:'flex', alignItems:'center', gap:6 }}>
               <span>📞</span><span>{selectedP.phone||'—'}</span>
             </a>
+            <div style={{ display:'flex', gap:8, marginTop:8, flexWrap:'wrap' }}>
+              {selectedP.rx_count      && <span style={{ padding:'3px 8px', borderRadius:4, background:'rgba(16,185,129,0.15)', color:'#34d399', fontSize:11, fontWeight:700 }}>💊 処方箋 {Number(selectedP.rx_count).toLocaleString()}枚</span>}
+              {selectedP.concentration && <span style={{ padding:'3px 8px', borderRadius:4, background:'rgba(245,158,11,0.15)', color:'#fbbf24', fontSize:11, fontWeight:700 }}>📊 集中率 {selectedP.concentration}%</span>}
+            </div>
           </div>
 
           {/* ステータス */}
@@ -447,9 +452,14 @@ function DesktopList({ calls, stats, filtered, fStatus, setFStatus, fPref, setFP
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
               <div style={{ flex:1, marginRight:10 }}>
                 <div style={{ fontSize:14, fontWeight:800, color:'#e8f0ff', marginBottom:4 }}>{selectedP.name}</div>
-                {selectedP.chain && <div style={{ fontSize:10, color:'#3b5280', marginBottom:4 }}>🏢 {selectedP.chain}</div>}
+                {selectedP.chain && <div style={{ fontSize:10, color:'#3b5280', marginBottom:2 }}>🏢 {selectedP.chain}</div>}
+                {selectedP.rep   && <div style={{ fontSize:10, color:'#3b5280', marginBottom:4 }}>👤 {selectedP.rep}</div>}
                 <div style={{ fontSize:11, color:'#3b5280' }}>📍 {selectedP.addr}</div>
                 <div style={{ fontSize:12, color:'#7ab3ff', marginTop:4, fontFamily:'monospace', fontWeight:700 }}>📞 {selectedP.phone||'—'}</div>
+                <div style={{ display:'flex', gap:8, marginTop:6, flexWrap:'wrap' }}>
+                  {selectedP.rx_count      && <span style={{ padding:'2px 8px', borderRadius:4, background:'rgba(16,185,129,0.15)', color:'#34d399', fontSize:11, fontWeight:700 }}>💊 {Number(selectedP.rx_count).toLocaleString()}枚</span>}
+                  {selectedP.concentration && <span style={{ padding:'2px 8px', borderRadius:4, background:'rgba(245,158,11,0.15)', color:'#fbbf24', fontSize:11, fontWeight:700 }}>📊 集中率 {selectedP.concentration}%</span>}
+                </div>
               </div>
               <button onClick={()=>setSel(null)} style={{ background:'none', border:'none', color:'#2a3d60', cursor:'pointer', fontSize:20 }}>✕</button>
             </div>
