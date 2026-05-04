@@ -2,16 +2,30 @@ export const STATUSES = {
   未着手:       { color: '#64748b', bright: '#94a3b8', bg: 'rgba(100,116,139,0.12)' },
   架電済:       { color: '#3b82f6', bright: '#60a5fa', bg: 'rgba(59,130,246,0.12)'  },
   折り返し待ち: { color: '#f59e0b', bright: '#fbbf24', bg: 'rgba(245,158,11,0.12)'  },
+  売手:         { color: '#f97316', bright: '#fb923c', bg: 'rgba(249,115,22,0.12)'  },
+  買手:         { color: '#06b6d4', bright: '#22d3ee', bg: 'rgba(6,182,212,0.12)'   },
   商談中:       { color: '#10b981', bright: '#34d399', bg: 'rgba(16,185,129,0.12)'  },
-  NG:           { color: '#ef4444', bright: '#f87171', bg: 'rgba(239,68,68,0.12)'   },
+  架電NG:       { color: '#ef4444', bright: '#f87171', bg: 'rgba(239,68,68,0.12)'   },
+  NG:           { color: '#6b7280', bright: '#9ca3af', bg: 'rgba(107,114,128,0.12)' },
   成約:         { color: '#a855f7', bright: '#c084fc', bg: 'rgba(168,85,247,0.12)'  },
 }
 
 export const STATUS_ICONS = {
-  未着手: '◯', 架電済: '📞', 折り返し待ち: '⏳', 商談中: '💬', NG: '✕', 成約: '★',
+  未着手: '◯', 架電済: '📞', 折り返し待ち: '⏳', 売手: '🏷', 買手: '🛒', 商談中: '💬', 架電NG: '🚫', NG: '✕', 成約: '★',
 }
 
-export const MEMBERS = ['未割当','田中','鈴木','佐藤','山田','伊藤','渡辺']
+export const DEFAULT_MEMBERS = ['未割当','田中','鈴木','佐藤','山田','伊藤','渡辺']
+
+export function getMembers() {
+  try {
+    const saved = localStorage.getItem('pharmacrm_members')
+    return saved ? JSON.parse(saved) : DEFAULT_MEMBERS
+  } catch { return DEFAULT_MEMBERS }
+}
+
+export function saveMembers(members) {
+  localStorage.setItem('pharmacrm_members', JSON.stringify(members))
+}
 
 export const MHLW_URL = 'https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/kenkou_iryou/iryou/newpage_43373.html'
 
