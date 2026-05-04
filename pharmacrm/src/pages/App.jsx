@@ -65,6 +65,7 @@ export default function App({ user }) {
   // 一括設定
   const [bulkAssignee, setBulkAssignee] = useState('')
   const [bulkStatus,   setBulkStatus]   = useState('')
+  const [bulkLock,     setBulkLock]     = useState('') // ''|'lock'|'unlock'
   const [bulkType,     setBulkType]     = useState('filtered') // filtered|chain|pref|city
 
   const saveTimer = useRef(null)
@@ -73,15 +74,30 @@ export default function App({ user }) {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const { data: phData } = await supabase.from('pharmacies').select('*').order('pref').range(0, 69999)
-      const { data: crData } = await supabase.from('call_records').select('*').range(0, 69999)
-      const ph = phData?.length ? phData : SAMPLE_PHARMACIES
+      // 薬局マスタを5000件ずつ取得
+      let phAll = []
+      for (let from = 0; from < 100000; from += 5000) {
+        const { data, error } = await supabase.from('pharmacies').select('id,name,pref,city,addr,phone,chain,rep,rx_count,concentration,zip').order('pref').range(from, from + 4999)
+        if (error || !data?.length) break
+        phAll = [...phAll, ...data]
+        if (data.length < 5000) break
+      }
+      // 架電データを5000件ずつ取得
+      let crAll = []
+      for (let from = 0; from < 100000; from += 5000) {
+        const { data, error } = await supabase.from('call_records').select('pharmacy_id,status,assignee,memo,next_action,last_call,locked').range(from, from + 4999)
+        if (error || !data?.length) break
+        crAll = [...crAll, ...data]
+        if (data.length < 5000) break
+      }
+      const ph = phAll.length ? phAll : SAMPLE_PHARMACIES
       setPharmacies(ph)
       const callMap = {}
       ph.forEach(p => { callMap[p.id] = makeCall() })
-      crData?.forEach(r => { callMap[r.pharmacy_id] = { ...makeCall(), ...r } })
+      crAll.forEach(r => { callMap[r.pharmacy_id] = { ...makeCall(), ...r } })
       setCalls(callMap)
-    } catch {
+    } catch(e) {
+      console.error(e)
       setPharmacies(SAMPLE_PHARMACIES)
       setCalls(Object.fromEntries(SAMPLE_PHARMACIES.map(p => [p.id, makeCall()])))
     } finally { setLoading(false) }
@@ -176,7 +192,7 @@ export default function App({ user }) {
 
   // ── 一括設定 ────────────────────────────────
   const executeBulk = useCallback(async () => {
-    if (!bulkAssignee && !bulkStatus) return
+    if (!bulkAssignee && !bulkStatus && !bulkLock) return
 
     // 対象リスト決定（ロック済みは除外）
     const targets = filtered.filter(p => !calls[p.id]?.locked)
@@ -194,6 +210,7 @@ export default function App({ user }) {
           ...next[p.id],
           ...(bulkAssignee ? { assignee: bulkAssignee } : {}),
           ...(bulkStatus   ? { status:   bulkStatus   } : {}),
+          ...(bulkLock     ? { locked:   bulkLock === 'lock' } : {}),
         }
       })
       return next
@@ -206,6 +223,7 @@ export default function App({ user }) {
         pharmacy_id: p.id,
         assignee: bulkAssignee || calls[p.id]?.assignee || '未割当',
         status:   bulkStatus   || calls[p.id]?.status   || '未着手',
+        locked:   bulkLock ? bulkLock === 'lock' : (calls[p.id]?.locked || false),
         memo:     calls[p.id]?.memo || '',
         next_action: calls[p.id]?.next_action || '',
         updated_by: user.id,
@@ -214,9 +232,9 @@ export default function App({ user }) {
     }
 
     setShowBulk(false)
-    setBulkAssignee(''); setBulkStatus('')
+    setBulkAssignee(''); setBulkStatus(''); setBulkLock('')
     alert('一括設定が完了しました')
-  }, [filtered, calls, bulkAssignee, bulkStatus, user])
+  }, [filtered, calls, bulkAssignee, bulkStatus, bulkLock, user])
 
   const addMember    = () => { if(!newMember.trim())return; const u=[...members,newMember.trim()]; setMembers(u);saveMembers(u);setNewMember('') }
   const removeMember = m => { const u=members.filter(x=>x!==m); setMembers(u);saveMembers(u) }
@@ -322,7 +340,14 @@ export default function App({ user }) {
             ))}
           </div>
 
-          <button onClick={executeBulk} disabled={!bulkAssignee && !bulkStatus} style={{ width:'100%', padding:12, borderRadius:8, border:'none', background:(!bulkAssignee&&!bulkStatus)?'#1a2744':'linear-gradient(135deg,#f59e0b,#ef4444)', color:'#fff', fontSize:13, fontWeight:800, cursor:(!bulkAssignee&&!bulkStatus)?'not-allowed':'pointer' }}>
+          <Lbl>🔒 ロックを一括設定</Lbl>
+          <div style={{ display:'flex', gap:6, marginBottom:20 }}>
+            {[['','変更しない'],['lock','🔒 一括ロック'],['unlock','🔓 一括解除']].map(([v,l])=>(
+              <button key={v} onClick={()=>setBulkLock(bulkLock===v&&v!==''?'':v)} style={{ padding:'6px 14px', borderRadius:6, border:`1.5px solid ${bulkLock===v&&v!==''?'#f59e0b':'#1a2744'}`, background:bulkLock===v&&v!==''?'rgba(245,158,11,0.2)':'transparent', color:bulkLock===v&&v!==''?'#fbbf24':'#3b5280', fontSize:12, fontWeight:700, cursor:'pointer' }}>{l}</button>
+            ))}
+          </div>
+
+          <button onClick={executeBulk} disabled={!bulkAssignee && !bulkStatus && !bulkLock} style={{ width:'100%', padding:12, borderRadius:8, border:'none', background:(!bulkAssignee&&!bulkStatus&&!bulkLock)?'#1a2744':'linear-gradient(135deg,#f59e0b,#ef4444)', color:'#fff', fontSize:13, fontWeight:800, cursor:(!bulkAssignee&&!bulkStatus&&!bulkLock)?'not-allowed':'pointer' }}>
             ⚡ 一括設定を実行
           </button>
         </Modal>
