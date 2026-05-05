@@ -459,8 +459,8 @@ function ListPanel({ paged, filtered, statCnt, allData, page, setPage, totalPage
           </div>
         )}
         {/* ステータスチップ - グループ別 */}
-        <div style={{ padding:'6px 12px', background:'#080e1a', borderBottom:'1px solid #1a2744', overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
-          <div style={{ display:'flex', gap:4, alignItems:'center', flexWrap:'nowrap' }}>
+        <div style={{ padding:'6px 12px', background:'#080e1a', borderBottom:'1px solid #1a2744' }}>
+          <div style={{ display:'flex', gap:4, alignItems:'center', flexWrap:'wrap' }}>
             <button onClick={()=>setFStatus('')} style={{ padding:'3px 9px', borderRadius:99, border:`1px solid ${!fStatus?'#4a6490':'#1a2744'}`, background:!fStatus?'rgba(74,100,144,0.2)':'transparent', color:!fStatus?'#94a3b8':'#2a3d60', fontSize:10, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>全て {allData.length.toLocaleString()}</button>
             {Object.entries(STATUS_GROUPS).map(([group, statuses]) => (
               <div key={group} style={{ display:'flex', gap:3, alignItems:'center', flexShrink:0 }}>
