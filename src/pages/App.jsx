@@ -71,12 +71,25 @@ export default function App({ user }) {
   const [showBulk,   setShowBulk]   = useState(false)
   const [showMenu,   setShowMenu]   = useState(false)
   const [showAdv,    setShowAdv]    = useState(false)
-  const [members,    setMembers]    = useState(getMembers)
+  const [members,    setMembers]    = useState([])
   const [newMember,  setNewMember]  = useState('')
+  const [memberColors, setMemberColors] = useState({})
   const [bulkAssignee,setBulkAssignee] = useState('')
   const [bulkStatus,  setBulkStatus]   = useState('')
   const [bulkLock,    setBulkLock]     = useState('')
   const saveTimer = useRef(null)
+
+  // Supabaseからメンバーリストを取得
+  useEffect(() => {
+    supabase.from('members').select('name,color').order('id').then(({ data }) => {
+      if (data?.length) {
+        setMembers(['未割当', ...data.map(m => m.name)])
+        const colors = {}
+        data.forEach(m => { colors[m.name] = m.color })
+        setMemberColors(colors)
+      }
+    })
+  }, [])
 
   // バックグラウンドで全データ読込
   useEffect(() => {
@@ -215,8 +228,20 @@ export default function App({ user }) {
     alert(`${targets.length.toLocaleString()}件に一括設定しました`)
   }, [filtered, bulkAssignee, bulkStatus, bulkLock, user])
 
-  const addMember    = () => { if(!newMember.trim())return; const u=[...members,newMember.trim()]; setMembers(u); saveMembers(u); setNewMember('') }
-  const removeMember = m  => { const u=members.filter(x=>x!==m); setMembers(u); saveMembers(u) }
+  const addMember    = async () => {
+    if(!newMember.trim()) return
+    const colors = ['#3b82f6','#10b981','#f59e0b','#ef4444','#a855f7','#06b6d4','#f97316','#84cc16','#ec4899','#14b8a6']
+    const color = colors[members.length % colors.length]
+    await supabase.from('members').insert({ name: newMember.trim(), color })
+    setMembers(prev => [...prev, newMember.trim()])
+    setMemberColors(prev => ({ ...prev, [newMember.trim()]: color }))
+    setNewMember('')
+  }
+  const removeMember = async (m) => {
+    await supabase.from('members').delete().eq('name', m)
+    setMembers(prev => prev.filter(x => x !== m))
+    setMemberColors(prev => { const n = {...prev}; delete n[m]; return n })
+  }
   const logout       = () => supabase.auth.signOut()
   const donePct = allData.length ? Math.round(allData.filter(r=>!['未着手'].includes(r.c.status)).length/allData.length*100) : 0
 
