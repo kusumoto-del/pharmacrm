@@ -658,9 +658,9 @@ function Dashboard({ allData, statCnt, members, isMobile }) {
           <div style={{ fontSize:isMobile?9:11, color:'#4a6490', marginTop:2 }}>📋 総薬局数</div>
         </div>
       </div>
-      <div style={{ borderRadius:10, background:'#0b1221', border:'1px solid #1a2744', overflow:'hidden' }}>
+      <div style={{ borderRadius:10, background:'#0b1221', border:'1px solid #1a2744' }}>
         <div style={{ padding:'10px 14px', borderBottom:'1px solid #1a2744', fontSize:12, fontWeight:800, color:'#7ab3ff' }}>👥 担当者別進捗</div>
-        <div style={{ overflowX:'auto', maxHeight:400, overflowY:'auto' }}>
+        <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:360 }}>
             <thead><tr style={{ background:'#080e1a' }}>
               <th style={{ padding:'7px 12px', textAlign:'left', fontSize:9, color:'#2a3d60', fontWeight:700 }}>担当者</th>
@@ -683,7 +683,7 @@ function Dashboard({ allData, statCnt, members, isMobile }) {
           </table>
         </div>
       </div>
-      <div style={{ borderRadius:10, background:'#0b1221', border:'1px solid #1a2744', overflow:'hidden' }}>
+      <div style={{ borderRadius:10, background:'#0b1221', border:'1px solid #1a2744' }}>
         <div style={{ padding:'10px 14px', borderBottom:'1px solid #1a2744', fontSize:12, fontWeight:800, color:'#7ab3ff' }}>🗾 都道府県別進捗</div>
         <div style={{ padding:'12px 14px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px 24px' }}>
           {prefStats.map(([pref,s])=>{
@@ -703,4 +703,3 @@ function Dashboard({ allData, statCnt, members, isMobile }) {
     </div>
   )
 }
-
