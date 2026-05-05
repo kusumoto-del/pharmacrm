@@ -636,6 +636,17 @@ function Dashboard({ allData, statCnt, members, memberColors, isMobile }) {
     allData.forEach(({ c }) => { if(r[c.assignee]){ r[c.assignee].total++; r[c.assignee][c.status]=(r[c.assignee][c.status]||0)+1 } })
     return r
   }, [allData, members])
+  const [prefAssignmentsDB, setPrefAssignmentsDB] = useState({})
+  useEffect(() => {
+    supabase.from('pref_assignments').select('pref_name,member_name').then(({ data }) => {
+      if (data) {
+        const map = {}
+        data.forEach(r => { map[r.pref_name] = r.member_name || '未割当' })
+        setPrefAssignmentsDB(map)
+      }
+    })
+  }, [])
+
   const prefStats = useMemo(() => {
     const r = {}
     allData.forEach(({ p, c }) => {
@@ -643,7 +654,7 @@ function Dashboard({ allData, statCnt, members, memberColors, isMobile }) {
       r[p.pref].total++
       if(c.status!=='未着手')r[p.pref].done++
     })
-    return Object.entries(r).sort((a,b)=>b[1].total-a[1].total).slice(0,12)
+    return Object.entries(r).sort((a,b)=>b[1].total-a[1].total).slice(0,24)
   }, [allData])
   const keyStatuses = ['売手','買手','M&A済み','アポ取得','関心有り','折返し待ち','未着手']
   return (
@@ -696,13 +707,18 @@ function Dashboard({ allData, statCnt, members, memberColors, isMobile }) {
         <div style={{ padding:'12px 14px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px 24px' }}>
           {prefStats.map(([pref,s])=>{
             const pct=Math.round(s.done/Math.max(s.total,1)*100)
+            const assignee = prefAssignmentsDB[pref] || '未割当'
+            const mColor = memberColors[assignee] || '#1d6aeb'
             return(
               <div key={pref} style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <div style={{ width:isMobile?70:90, fontSize:11, color:'#7ab3ff', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flexShrink:0 }}>{pref}</div>
-                <div style={{ flex:1, height:5, background:'#1a2744', borderRadius:99, overflow:'hidden' }}>
-                  <div style={{ width:`${pct}%`, height:'100%', background:'linear-gradient(90deg,#1d6aeb,#10b981)' }}/>
+                <div style={{ width:isMobile?70:100, fontSize:11, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flexShrink:0, display:'flex', alignItems:'center', gap:4 }}>
+                  {assignee!=='未割当'&&<span style={{ width:7, height:7, borderRadius:'50%', background:mColor, display:'inline-block', flexShrink:0 }}/>}
+                  <span style={{ color:assignee!=='未割当'?mColor:'#7ab3ff' }}>{pref}</span>
                 </div>
-                <div style={{ fontSize:10, color:'#2a3d60', whiteSpace:'nowrap' }}>{s.done}/{s.total}</div>
+                <div style={{ flex:1, height:6, background:'#1a2744', borderRadius:99, overflow:'hidden' }}>
+                  <div style={{ width:`${pct}%`, height:'100%', background:assignee!=='未割当'?mColor:'#1d6aeb', transition:'width 0.3s' }}/>
+                </div>
+                <div style={{ fontSize:10, color:'#2a3d60', whiteSpace:'nowrap', minWidth:50, textAlign:'right' }}>{s.done}/{s.total}</div>
               </div>
             )
           })}
@@ -712,18 +728,20 @@ function Dashboard({ allData, statCnt, members, memberColors, isMobile }) {
   )
 }
 
-// ── エリアマップコンポーネント ─────────────────────
+// ── エリアマップコンポーネント（D3 日本地図版） ─────────
 function AreaMap({ members, memberColors }) {
   const [prefAssignments, setPrefAssignments] = useState({})
   const [selectedMember, setSelectedMember] = useState('未割当')
-  const [loading, setLoading] = useState(true)
   const [hoveredPref, setHoveredPref] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const mapRef = useRef(null)
+  const svgRef = useRef(null)
 
   const MEMBER_COLORS_DEFAULT = {
-    '未割当':'#64748b','駒井':'#3b82f6','佐々木':'#10b981','谷畑':'#f59e0b',
+    '未割当':'#334155','駒井':'#3b82f6','佐々木':'#10b981','谷畑':'#f59e0b',
     '西尾':'#ef4444','御手洗':'#a855f7','楠本':'#06b6d4','田中':'#f97316','佐藤':'#84cc16'
   }
-  const getColor = (m) => memberColors[m] || MEMBER_COLORS_DEFAULT[m] || '#64748b'
+  const getColor = (m) => memberColors[m] || MEMBER_COLORS_DEFAULT[m] || '#334155'
 
   useEffect(() => {
     supabase.from('pref_assignments').select('pref_id,pref_name,member_name').then(({ data }) => {
@@ -737,46 +755,150 @@ function AreaMap({ members, memberColors }) {
   }, [])
 
   const handlePrefClick = async (prefId, prefName) => {
-    const newMember = selectedMember
-    setPrefAssignments(prev => ({ ...prev, [prefId]: newMember }))
+    setPrefAssignments(prev => ({ ...prev, [prefId]: selectedMember }))
     await supabase.from('pref_assignments').upsert({
-      pref_id: prefId, pref_name: prefName, member_name: newMember, updated_at: new Date().toISOString()
+      pref_id: prefId, pref_name: prefName, member_name: selectedMember, updated_at: new Date().toISOString()
     }, { onConflict: 'pref_id' })
   }
 
-  // 都道府県データ（SVGパス簡略版 - グリッドレイアウト）
-  const PREFS_GRID = [
-    // [id, name, col, row]
-    [1,'北海道',8,0],[2,'青森県',8,1],[3,'岩手県',8,2],[4,'宮城県',8,3],
-    [5,'秋田県',7,2],[6,'山形県',7,3],[7,'福島県',7,4],[8,'茨城県',8,4],
-    [9,'栃木県',7,5],[10,'群馬県',6,5],[11,'埼玉県',7,6],[12,'千葉県',8,6],
-    [13,'東京都',7,7],[14,'神奈川県',7,8],[15,'新潟県',6,4],[16,'富山県',5,5],
-    [17,'石川県',4,5],[18,'福井県',4,6],[19,'山梨県',6,7],[20,'長野県',5,6],
-    [21,'岐阜県',5,7],[22,'静岡県',6,8],[23,'愛知県',5,8],[24,'三重県',5,9],
-    [25,'滋賀県',4,8],[26,'京都府',4,7],[27,'大阪府',4,9],[28,'兵庫県',3,8],
-    [29,'奈良県',4,10],[30,'和歌山県',4,11],[31,'鳥取県',3,7],[32,'島根県',2,7],
-    [33,'岡山県',3,9],[34,'広島県',2,8],[35,'山口県',1,8],[36,'徳島県',4,12],
-    [37,'香川県',3,11],[38,'愛媛県',2,11],[39,'高知県',3,12],[40,'福岡県',1,9],
-    [41,'佐賀県',0,10],[42,'長崎県',0,11],[43,'熊本県',1,10],[44,'大分県',2,9],
-    [45,'宮崎県',2,10],[46,'鹿児島県',1,11],[47,'沖縄県',0,13],
-  ]
+  useEffect(() => {
+    if (loading) return
+    if (!mapRef.current) return
 
-  const CELL = 44
-  const GAP = 2
-  const cols = 10, rows = 14
-  const W = cols * (CELL + GAP), H = rows * (CELL + GAP)
+    const container = mapRef.current
+    container.innerHTML = ''
+
+    const W = container.offsetWidth || 600
+    const H = Math.round(W * 0.75)
+
+    const script1 = document.createElement('script')
+    script1.src = 'https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js'
+    script1.onload = () => {
+      const script2 = document.createElement('script')
+      script2.src = 'https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js'
+      script2.onload = () => {
+        const d3 = window.d3
+        const topojson = window.topojson
+        if (!d3 || !topojson) return
+
+        const svg = d3.select(container).append('svg')
+          .attr('viewBox', `0 0 ${W} ${H}`)
+          .attr('width', '100%')
+          .style('border-radius', '8px')
+
+        svgRef.current = svg
+
+        const isDark = matchMedia('(prefers-color-scheme: dark)').matches
+        const strokeColor = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.2)'
+        const projection = d3.geoMercator().center([136.5, 38]).scale(W * 1.8).translate([W * 0.44, H * 0.5])
+        const path = d3.geoPath(projection)
+
+        const PREF_NAMES = {
+          1:'北海道',2:'青森県',3:'岩手県',4:'宮城県',5:'秋田県',6:'山形県',7:'福島県',
+          8:'茨城県',9:'栃木県',10:'群馬県',11:'埼玉県',12:'千葉県',13:'東京都',14:'神奈川県',
+          15:'新潟県',16:'富山県',17:'石川県',18:'福井県',19:'山梨県',20:'長野県',
+          21:'岐阜県',22:'静岡県',23:'愛知県',24:'三重県',25:'滋賀県',26:'京都府',
+          27:'大阪府',28:'兵庫県',29:'奈良県',30:'和歌山県',31:'鳥取県',32:'島根県',
+          33:'岡山県',34:'広島県',35:'山口県',36:'徳島県',37:'香川県',38:'愛媛県',
+          39:'高知県',40:'福岡県',41:'佐賀県',42:'長崎県',43:'熊本県',44:'大分県',
+          45:'宮崎県',46:'鹿児島県',47:'沖縄県'
+        }
+
+        const tooltip = d3.select(container).append('div')
+          .style('position', 'absolute').style('background', '#0d1829')
+          .style('border', '1px solid #1a2744').style('border-radius', '6px')
+          .style('padding', '6px 10px').style('font-size', '12px')
+          .style('color', '#c8d4e8').style('pointer-events', 'none')
+          .style('opacity', '0').style('z-index', '10')
+          .style('font-family', "'Noto Sans JP',sans-serif")
+
+        d3.select(container).style('position', 'relative')
+
+        d3.json('https://cdn.jsdelivr.net/npm/datamaps@0.5.10/src/js/data/jpn.topo.json').then(jp => {
+          const features = topojson.feature(jp, jp.objects.jpn).features
+
+          const getAssignee = (id) => {
+            const el = document.getElementById(`pref-assign-${id}`)
+            return el ? el.dataset.assignee : '未割当'
+          }
+
+          svg.selectAll('path')
+            .data(features)
+            .join('path')
+            .attr('id', d => `pref-path-${d.id}`)
+            .attr('d', path)
+            .attr('fill', d => {
+              const el = document.getElementById(`pref-assign-${d.id}`)
+              const assignee = el ? el.dataset.assignee : '未割当'
+              const mc = memberColors[assignee] || MEMBER_COLORS_DEFAULT[assignee] || '#334155'
+              return assignee === '未割当' ? (isDark ? '#1e2d42' : '#dde4ef') : mc + 'aa'
+            })
+            .attr('stroke', strokeColor)
+            .attr('stroke-width', '0.5')
+            .style('cursor', 'pointer')
+            .on('mouseover', function(event, d) {
+              const el = document.getElementById(`pref-assign-${d.id}`)
+              const assignee = el ? el.dataset.assignee : '未割当'
+              const name = PREF_NAMES[d.id] || d.id
+              tooltip.style('opacity', '1')
+                .html(`<strong>${name}</strong><br/>${assignee}`)
+              d3.select(this).attr('stroke-width', '2').attr('stroke', '#60a5fa')
+            })
+            .on('mousemove', function(event) {
+              const rect = container.getBoundingClientRect()
+              tooltip.style('left', (event.clientX - rect.left + 10) + 'px')
+                .style('top', (event.clientY - rect.top - 30) + 'px')
+            })
+            .on('mouseout', function() {
+              tooltip.style('opacity', '0')
+              d3.select(this).attr('stroke-width', '0.5').attr('stroke', strokeColor)
+            })
+            .on('click', function(event, d) {
+              const name = PREF_NAMES[d.id] || String(d.id)
+              const selEl = document.getElementById('selected-member-store')
+              const sel = selEl ? selEl.dataset.member : '未割当'
+              const mc = memberColors[sel] || MEMBER_COLORS_DEFAULT[sel] || '#334155'
+              d3.select(this).attr('fill', sel === '未割当' ? (isDark ? '#1e2d42' : '#dde4ef') : mc + 'aa')
+              const el = document.getElementById(`pref-assign-${d.id}`)
+              if (el) el.dataset.assignee = sel
+              supabase.from('pref_assignments').upsert({
+                pref_id: d.id, pref_name: name, member_name: sel, updated_at: new Date().toISOString()
+              }, { onConflict: 'pref_id' })
+              setPrefAssignments(prev => ({ ...prev, [d.id]: sel }))
+            })
+        }).catch(() => {
+          d3.select(container).append('p')
+            .style('color', 'var(--color-text-secondary)')
+            .style('font-size', '13px')
+            .text('地図データを読み込めませんでした')
+        })
+      }
+      document.head.appendChild(script2)
+    }
+    document.head.appendChild(script1)
+  }, [loading, memberColors])
 
   if (loading) return <div style={{ textAlign:'center', color:'#3b5280', padding:24 }}>読み込み中...</div>
 
   return (
     <div>
-      {/* 担当者選択 */}
+      {/* 隠しデータストア */}
+      <div id="selected-member-store" data-member={selectedMember} style={{ display:'none' }}/>
+      {Object.entries(prefAssignments).map(([id, assignee]) => (
+        <div key={id} id={`pref-assign-${id}`} data-assignee={assignee} style={{ display:'none' }}/>
+      ))}
+
+      {/* 担当者選択ボタン */}
       <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:14 }}>
         {['未割当', ...members.filter(m=>m!=='未割当')].map(m => {
           const color = getColor(m)
           const active = selectedMember === m
           return (
-            <button key={m} onClick={()=>setSelectedMember(m)}
+            <button key={m} onClick={()=>{
+              setSelectedMember(m)
+              const el = document.getElementById('selected-member-store')
+              if (el) el.dataset.member = m
+            }}
               style={{ padding:'5px 12px', borderRadius:6, border:`1.5px solid ${active?color:'#1a2744'}`, background:active?`${color}22`:'transparent', color:active?color:'#3b5280', fontSize:12, fontWeight:700, cursor:'pointer' }}>
               {m}
             </button>
@@ -784,36 +906,8 @@ function AreaMap({ members, memberColors }) {
         })}
       </div>
 
-      {/* グリッドマップ */}
-      <div style={{ overflowX:'auto' }}>
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', maxWidth:W, display:'block' }}>
-          {PREFS_GRID.map(([id, name, col, row]) => {
-            const assignee = prefAssignments[id] || '未割当'
-            const color = getColor(assignee)
-            const x = col * (CELL + GAP)
-            const y = row * (CELL + GAP)
-            const isHovered = hoveredPref === id
-            return (
-              <g key={id} onClick={()=>handlePrefClick(id, name)}
-                onMouseEnter={()=>setHoveredPref(id)}
-                onMouseLeave={()=>setHoveredPref(null)}
-                style={{ cursor:'pointer' }}>
-                <rect x={x} y={y} width={CELL} height={CELL} rx={4}
-                  fill={assignee==='未割当'?'#1a2744':`${color}55`}
-                  stroke={isHovered?color:assignee==='未割当'?'#2a3d60':color}
-                  strokeWidth={isHovered?2:1}
-                  opacity={isHovered?0.9:1}
-                />
-                <text x={x+CELL/2} y={y+CELL/2+1} textAnchor="middle" dominantBaseline="middle"
-                  fontSize={name.length>3?9:10} fontFamily="'Noto Sans JP',sans-serif"
-                  fill={assignee==='未割当'?'#4a6490':color}>
-                  {name.replace('県','').replace('府','').replace('都','').replace('道','')}
-                </text>
-              </g>
-            )
-          })}
-        </svg>
-      </div>
+      {/* 地図 */}
+      <div ref={mapRef} style={{ width:'100%', minHeight:300 }}/>
 
       {/* 凡例 */}
       <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginTop:12, fontSize:11 }}>
