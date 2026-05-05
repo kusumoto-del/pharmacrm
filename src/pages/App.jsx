@@ -660,7 +660,7 @@ function Dashboard({ allData, statCnt, members, isMobile }) {
       </div>
       <div style={{ borderRadius:10, background:'#0b1221', border:'1px solid #1a2744', overflow:'hidden' }}>
         <div style={{ padding:'10px 14px', borderBottom:'1px solid #1a2744', fontSize:12, fontWeight:800, color:'#7ab3ff' }}>👥 担当者別進捗</div>
-        <div style={{ overflowX:'auto' }}>
+        <div style={{ overflowX:'auto', maxHeight:400, overflowY:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:360 }}>
             <thead><tr style={{ background:'#080e1a' }}>
               <th style={{ padding:'7px 12px', textAlign:'left', fontSize:9, color:'#2a3d60', fontWeight:700 }}>担当者</th>
@@ -670,7 +670,7 @@ function Dashboard({ allData, statCnt, members, isMobile }) {
               ))}
             </tr></thead>
             <tbody>
-              {members.map((m,i)=>(
+              {members.filter(m=>m!=='未割当').map((m,i)=>(
                 <tr key={m} style={{ borderTop:'1px solid #1a2744', background:i%2===0?'#0b1221':'#080e1a' }}>
                   <td style={{ padding:'8px 12px', fontSize:12, color:m==='未割当'?'#2a3d60':'#c8d4e8', fontWeight:700 }}>{m}</td>
                   <td style={{ padding:'8px 8px', textAlign:'center', fontSize:12, color:'#7ab3ff', fontWeight:800 }}>{memberStats[m]?.total||0}</td>
