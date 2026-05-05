@@ -313,7 +313,7 @@ export default function App({ user }) {
       </header>
 
       {tab === 'dashboard' ? (
-        <Dashboard allData={allData} statCnt={statCnt} members={members} isMobile={isMobile}/>
+        <Dashboard allData={allData} statCnt={statCnt} members={members} memberColors={memberColors} isMobile={isMobile}/>
       ) : (
         <ListPanel
           paged={paged} filtered={filtered} statCnt={statCnt} allData={allData}
@@ -388,6 +388,14 @@ function Modal({ onClose, title, children }) {
         <div style={{ fontSize:15, fontWeight:800, color:'#e8f0ff', marginBottom:16 }}>{title}</div>
         {children}
         <button onClick={onClose} style={{ width:'100%', padding:10, borderRadius:8, border:'1px solid #1a2744', background:'transparent', color:'#4a6490', fontSize:13, fontWeight:700, cursor:'pointer', marginTop:8 }}>閉じる</button>
+      </div>
+
+      {/* エリアマップ */}
+      <div style={{ borderRadius:10, background:'#0b1221', border:'1px solid #1a2744', overflow:'hidden' }}>
+        <div style={{ padding:'10px 14px', borderBottom:'1px solid #1a2744', fontSize:12, fontWeight:800, color:'#7ab3ff' }}>🗾 エリア担当マップ</div>
+        <div style={{ padding:14 }}>
+          <AreaMap members={members} memberColors={memberColors}/>
+        </div>
       </div>
     </div>
   )
@@ -620,7 +628,7 @@ function DetailView({ p, c, eMemo, setEMemo, eNext, setENext, setStatus, setAssi
   )
 }
 
-function Dashboard({ allData, statCnt, members, isMobile }) {
+function Dashboard({ allData, statCnt, members, memberColors, isMobile }) {
   const total = allData.length
   const memberStats = useMemo(() => {
     const r = {}
@@ -699,6 +707,127 @@ function Dashboard({ allData, statCnt, members, isMobile }) {
             )
           })}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── エリアマップコンポーネント ─────────────────────
+function AreaMap({ members, memberColors }) {
+  const [prefAssignments, setPrefAssignments] = useState({})
+  const [selectedMember, setSelectedMember] = useState('未割当')
+  const [loading, setLoading] = useState(true)
+  const [hoveredPref, setHoveredPref] = useState(null)
+
+  const MEMBER_COLORS_DEFAULT = {
+    '未割当':'#64748b','駒井':'#3b82f6','佐々木':'#10b981','谷畑':'#f59e0b',
+    '西尾':'#ef4444','御手洗':'#a855f7','楠本':'#06b6d4','田中':'#f97316','佐藤':'#84cc16'
+  }
+  const getColor = (m) => memberColors[m] || MEMBER_COLORS_DEFAULT[m] || '#64748b'
+
+  useEffect(() => {
+    supabase.from('pref_assignments').select('pref_id,pref_name,member_name').then(({ data }) => {
+      if (data) {
+        const map = {}
+        data.forEach(r => { map[r.pref_id] = r.member_name || '未割当' })
+        setPrefAssignments(map)
+      }
+      setLoading(false)
+    })
+  }, [])
+
+  const handlePrefClick = async (prefId, prefName) => {
+    const newMember = selectedMember
+    setPrefAssignments(prev => ({ ...prev, [prefId]: newMember }))
+    await supabase.from('pref_assignments').upsert({
+      pref_id: prefId, pref_name: prefName, member_name: newMember, updated_at: new Date().toISOString()
+    }, { onConflict: 'pref_id' })
+  }
+
+  // 都道府県データ（SVGパス簡略版 - グリッドレイアウト）
+  const PREFS_GRID = [
+    // [id, name, col, row]
+    [1,'北海道',8,0],[2,'青森県',8,1],[3,'岩手県',8,2],[4,'宮城県',8,3],
+    [5,'秋田県',7,2],[6,'山形県',7,3],[7,'福島県',7,4],[8,'茨城県',8,4],
+    [9,'栃木県',7,5],[10,'群馬県',6,5],[11,'埼玉県',7,6],[12,'千葉県',8,6],
+    [13,'東京都',7,7],[14,'神奈川県',7,8],[15,'新潟県',6,4],[16,'富山県',5,5],
+    [17,'石川県',4,5],[18,'福井県',4,6],[19,'山梨県',6,7],[20,'長野県',5,6],
+    [21,'岐阜県',5,7],[22,'静岡県',6,8],[23,'愛知県',5,8],[24,'三重県',5,9],
+    [25,'滋賀県',4,8],[26,'京都府',4,7],[27,'大阪府',4,9],[28,'兵庫県',3,8],
+    [29,'奈良県',4,10],[30,'和歌山県',4,11],[31,'鳥取県',3,7],[32,'島根県',2,7],
+    [33,'岡山県',3,9],[34,'広島県',2,8],[35,'山口県',1,8],[36,'徳島県',4,12],
+    [37,'香川県',3,11],[38,'愛媛県',2,11],[39,'高知県',3,12],[40,'福岡県',1,9],
+    [41,'佐賀県',0,10],[42,'長崎県',0,11],[43,'熊本県',1,10],[44,'大分県',2,9],
+    [45,'宮崎県',2,10],[46,'鹿児島県',1,11],[47,'沖縄県',0,13],
+  ]
+
+  const CELL = 44
+  const GAP = 2
+  const cols = 10, rows = 14
+  const W = cols * (CELL + GAP), H = rows * (CELL + GAP)
+
+  if (loading) return <div style={{ textAlign:'center', color:'#3b5280', padding:24 }}>読み込み中...</div>
+
+  return (
+    <div>
+      {/* 担当者選択 */}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:14 }}>
+        {['未割当', ...members.filter(m=>m!=='未割当')].map(m => {
+          const color = getColor(m)
+          const active = selectedMember === m
+          return (
+            <button key={m} onClick={()=>setSelectedMember(m)}
+              style={{ padding:'5px 12px', borderRadius:6, border:`1.5px solid ${active?color:'#1a2744'}`, background:active?`${color}22`:'transparent', color:active?color:'#3b5280', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+              {m}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* グリッドマップ */}
+      <div style={{ overflowX:'auto' }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', maxWidth:W, display:'block' }}>
+          {PREFS_GRID.map(([id, name, col, row]) => {
+            const assignee = prefAssignments[id] || '未割当'
+            const color = getColor(assignee)
+            const x = col * (CELL + GAP)
+            const y = row * (CELL + GAP)
+            const isHovered = hoveredPref === id
+            return (
+              <g key={id} onClick={()=>handlePrefClick(id, name)}
+                onMouseEnter={()=>setHoveredPref(id)}
+                onMouseLeave={()=>setHoveredPref(null)}
+                style={{ cursor:'pointer' }}>
+                <rect x={x} y={y} width={CELL} height={CELL} rx={4}
+                  fill={assignee==='未割当'?'#1a2744':`${color}55`}
+                  stroke={isHovered?color:assignee==='未割当'?'#2a3d60':color}
+                  strokeWidth={isHovered?2:1}
+                  opacity={isHovered?0.9:1}
+                />
+                <text x={x+CELL/2} y={y+CELL/2+1} textAnchor="middle" dominantBaseline="middle"
+                  fontSize={name.length>3?9:10} fontFamily="'Noto Sans JP',sans-serif"
+                  fill={assignee==='未割当'?'#4a6490':color}>
+                  {name.replace('県','').replace('府','').replace('都','').replace('道','')}
+                </text>
+              </g>
+            )
+          })}
+        </svg>
+      </div>
+
+      {/* 凡例 */}
+      <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginTop:12, fontSize:11 }}>
+        {members.filter(m=>m!=='未割当').map(m => {
+          const cnt = Object.values(prefAssignments).filter(v=>v===m).length
+          if (cnt===0) return null
+          const color = getColor(m)
+          return (
+            <span key={m} style={{ display:'flex', alignItems:'center', gap:4, color:'#94a3b8' }}>
+              <span style={{ width:10, height:10, borderRadius:2, background:color, display:'inline-block' }}/>
+              {m} {cnt}都道府県
+            </span>
+          )
+        })}
       </div>
     </div>
   )
