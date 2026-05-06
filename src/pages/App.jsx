@@ -13,27 +13,9 @@ function useIsMobile() {
   return v
 }
 
-// 定型フォーマット出力（送付先リスト）
 function exportFormatExcel(filtered) {
   const headers = ['開設者氏名（会社名）','薬局名','社長名','患者数','電話番号','アプローチ状況','薬剤師','管理者氏名','住所','URL','電話番号','郵便番号','店舗数','社長名（スペース削除）','役職','TC結果']
-  const rows = filtered.map(({ p, c }) => [
-    p.chain || '',    // 開設者氏名
-    p.name  || '',    // 薬局名
-    p.rep   || '',    // 社長名
-    p.rx_count || '', // 患者数
-    p.phone || '',    // 電話番号
-    c.status || '',   // アプローチ状況
-    '',               // 薬剤師
-    '',               // 管理者氏名
-    p.addr  || '',    // 住所
-    '',               // URL
-    p.phone || '',    // 電話番号（2）
-    p.zip   || '',    // 郵便番号
-    '',               // 店舗数
-    (p.rep||'').replace(/\s/g,''), // 社長名スペース削除
-    '',               // 役職
-    c.memo  || '',    // TC結果
-  ])
+  const rows = filtered.map(({ p, c }) => [p.chain||'',p.name||'',p.rep||'',p.rx_count||'',p.phone||'',c.status||'','','',p.addr||'','',p.phone||'',p.zip||'','',(p.rep||'').replace(/\s/g,''),'',c.memo||''])
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
   ws['!cols'] = headers.map((_,i) => ({ wch: [20,20,12,8,14,12,8,12,30,20,14,12,8,14,8,20][i]||12 }))
   const wb = XLSX.utils.book_new()
@@ -41,7 +23,6 @@ function exportFormatExcel(filtered) {
   XLSX.writeFile(wb, '送付先リスト.xlsx')
 }
 
-// 通常CSV出力
 function exportCSV(filtered) {
   const rows = [['会社名','代表者','薬局名','郵便番号','住所','電話番号','処方箋枚数','ステータス','担当者','最終架電','次回アクション','メモ']]
   filtered.forEach(({ p, c }) => rows.push([p.chain||'',p.rep||'',p.name,p.zip||'',p.addr,p.phone,p.rx_count||'',c.status,c.assignee,c.last_call||'',c.next_action||'',c.memo||'']))
@@ -79,7 +60,6 @@ export default function App({ user }) {
   const [bulkLock,    setBulkLock]     = useState('')
   const saveTimer = useRef(null)
 
-  // Supabaseからメンバーリストを取得
   useEffect(() => {
     supabase.from('members').select('name,color').order('id').then(({ data }) => {
       if (data?.length) {
@@ -91,7 +71,6 @@ export default function App({ user }) {
     })
   }, [])
 
-  // バックグラウンドで全データ読込
   useEffect(() => {
     let cancelled = false
     const load = async () => {
@@ -99,9 +78,7 @@ export default function App({ user }) {
       let phAll = [], crAll = []
       for (let from = 0; from < 100000; from += BATCH) {
         if (cancelled) return
-        const { data } = await supabase.from('pharmacies')
-          .select('id,name,pref,city,addr,phone,zip,chain,rep,rx_count,concentration')
-          .order('pref').range(from, from + BATCH - 1)
+        const { data } = await supabase.from('pharmacies').select('id,name,pref,city,addr,phone,zip,chain,rep,rx_count,concentration').order('pref').range(from, from + BATCH - 1)
         if (!data?.length) break
         phAll = [...phAll, ...data]
         setLoadPct(Math.min(50, Math.round(phAll.length / 600)))
@@ -109,9 +86,7 @@ export default function App({ user }) {
       }
       for (let from = 0; from < 100000; from += BATCH) {
         if (cancelled) return
-        const { data } = await supabase.from('call_records')
-          .select('pharmacy_id,status,assignee,memo,next_action,last_call,locked')
-          .range(from, from + BATCH - 1)
+        const { data } = await supabase.from('call_records').select('pharmacy_id,status,assignee,memo,next_action,last_call,locked').range(from, from + BATCH - 1)
         if (!data?.length) break
         crAll = [...crAll, ...data]
         setLoadPct(50 + Math.min(50, Math.round(crAll.length / 600)))
@@ -120,10 +95,7 @@ export default function App({ user }) {
       if (cancelled) return
       const crMap = {}
       crAll.forEach(r => { crMap[r.pharmacy_id] = r })
-      const merged = phAll.map(p => ({
-        p,
-        c: crMap[p.id] || { pharmacy_id: p.id, status: '未着手', assignee: '未割当', memo: '', next_action: '', last_call: null, locked: false }
-      }))
+      const merged = phAll.map(p => ({ p, c: crMap[p.id] || { pharmacy_id: p.id, status: '未着手', assignee: '未割当', memo: '', next_action: '', last_call: null, locked: false } }))
       setAllData(merged)
       setLoadPct(100)
       setReady(true)
@@ -152,41 +124,21 @@ export default function App({ user }) {
   useEffect(() => { setPage(0) }, [fText, fStatus, fPref, fCity, fMember, fChain, fRxMin])
   const paged      = useMemo(() => filtered.slice(page * PAGE, (page + 1) * PAGE), [filtered, page])
   const totalPages = Math.ceil(filtered.length / PAGE)
-  const statCnt    = useMemo(() => {
-    const cnt = {}
-    allData.forEach(({ c }) => { cnt[c.status] = (cnt[c.status] || 0) + 1 })
-    return cnt
-  }, [allData])
-  const cities = useMemo(() => {
-    if (!fPref) return ['全て']
-    return ['全て', ...Array.from(new Set(allData.filter(({p})=>p.pref===fPref).map(({p})=>p.city).filter(Boolean))).sort()]
-  }, [allData, fPref])
+  const statCnt    = useMemo(() => { const cnt = {}; allData.forEach(({ c }) => { cnt[c.status] = (cnt[c.status] || 0) + 1 }); return cnt }, [allData])
+  const cities     = useMemo(() => { if (!fPref) return ['全て']; return ['全て', ...Array.from(new Set(allData.filter(({p})=>p.pref===fPref).map(({p})=>p.city).filter(Boolean))).sort()] }, [allData, fPref])
   const selRow = sel ? allData.find(r => r.p.id === sel) : null
   const selP = selRow?.p, selC = selRow?.c
   useEffect(() => { if (selC) { setEMemo(selC.memo||''); setENext(selC.next_action||'') } }, [sel])
 
-  const updateLocal = useCallback((id, patch) => {
-    setAllData(prev => prev.map(r => r.p.id === id ? { ...r, c: { ...r.c, ...patch } } : r))
-  }, [])
-
+  const updateLocal = useCallback((id, patch) => { setAllData(prev => prev.map(r => r.p.id === id ? { ...r, c: { ...r.c, ...patch } } : r)) }, [])
   const syncDB = useCallback(async (id, patch) => {
     const ex = allData.find(r => r.p.id === id)?.c || {}
-    await supabase.from('call_records').upsert({
-      pharmacy_id: id,
-      status:      ex.status      || '未着手',
-      assignee:    ex.assignee    || '未割当',
-      memo:        ex.memo        || '',
-      next_action: ex.next_action || '',
-      locked:      ex.locked      || false,
-      ...patch,
-      updated_by: user.id,
-    }, { onConflict: 'pharmacy_id' })
+    await supabase.from('call_records').upsert({ pharmacy_id: id, status: ex.status||'未着手', assignee: ex.assignee||'未割当', memo: ex.memo||'', next_action: ex.next_action||'', locked: ex.locked||false, ...patch, updated_by: user.id }, { onConflict: 'pharmacy_id' })
   }, [allData, user])
 
   const setStatus = useCallback(async (id, status) => {
     const lastCall = ['折返し待ち','アポ取得','関心有り'].includes(status) ? new Date().toISOString().slice(0,10) : allData.find(r=>r.p.id===id)?.c?.last_call
-    updateLocal(id, { status, last_call: lastCall })
-    await syncDB(id, { status, last_call: lastCall })
+    updateLocal(id, { status, last_call: lastCall }); await syncDB(id, { status, last_call: lastCall })
   }, [allData, updateLocal, syncDB])
 
   const setAssignee = (id, assignee) => { updateLocal(id, { assignee }); syncDB(id, { assignee }) }
@@ -205,30 +157,18 @@ export default function App({ user }) {
     if (!window.confirm(`${targets.length.toLocaleString()}件に一括設定します。よろしいですか？`)) return
     setAllData(prev => prev.map(r => {
       if (!targets.find(t => t.p.id === r.p.id)) return r
-      return { ...r, c: { ...r.c,
-        ...(bulkAssignee ? { assignee: bulkAssignee } : {}),
-        ...(bulkStatus   ? { status:   bulkStatus   } : {}),
-        ...(bulkLock === 'lock' ? { locked: true } : bulkLock === 'unlock' ? { locked: false } : {}),
-      }}
+      return { ...r, c: { ...r.c, ...(bulkAssignee ? { assignee: bulkAssignee } : {}), ...(bulkStatus ? { status: bulkStatus } : {}), ...(bulkLock === 'lock' ? { locked: true } : bulkLock === 'unlock' ? { locked: false } : {}) }}
     }))
     const BATCH = 500
     for (let i = 0; i < targets.length; i += BATCH) {
-      const batch = targets.slice(i, i + BATCH).map(({ p, c }) => ({
-        pharmacy_id: p.id,
-        status:      bulkStatus   || c.status   || '未着手',
-        assignee:    bulkAssignee || c.assignee || '未割当',
-        locked:      bulkLock === 'lock' ? true : bulkLock === 'unlock' ? false : (c.locked||false),
-        memo:        c.memo        || '',
-        next_action: c.next_action || '',
-        updated_by:  user.id,
-      }))
+      const batch = targets.slice(i, i + BATCH).map(({ p, c }) => ({ pharmacy_id: p.id, status: bulkStatus||c.status||'未着手', assignee: bulkAssignee||c.assignee||'未割当', locked: bulkLock==='lock'?true:bulkLock==='unlock'?false:(c.locked||false), memo: c.memo||'', next_action: c.next_action||'', updated_by: user.id }))
       await supabase.from('call_records').upsert(batch, { onConflict: 'pharmacy_id' })
     }
     setShowBulk(false); setBulkAssignee(''); setBulkStatus(''); setBulkLock('')
     alert(`${targets.length.toLocaleString()}件に一括設定しました`)
   }, [filtered, bulkAssignee, bulkStatus, bulkLock, user])
 
-  const addMember    = async () => {
+  const addMember = async () => {
     if(!newMember.trim()) return
     const colors = ['#3b82f6','#10b981','#f59e0b','#ef4444','#a855f7','#06b6d4','#f97316','#84cc16','#ec4899','#14b8a6']
     const color = colors[members.length % colors.length]
@@ -242,7 +182,7 @@ export default function App({ user }) {
     setMembers(prev => prev.filter(x => x !== m))
     setMemberColors(prev => { const n = {...prev}; delete n[m]; return n })
   }
-  const logout       = () => supabase.auth.signOut()
+  const logout = () => supabase.auth.signOut()
   const donePct = allData.length ? Math.round(allData.filter(r=>!['未着手'].includes(r.c.status)).length/allData.length*100) : 0
 
   if (!ready) return (
@@ -306,9 +246,7 @@ export default function App({ user }) {
           <div style={{ flex:1, height:3, background:'#1a2744', borderRadius:99, overflow:'hidden' }}>
             <div style={{ width:`${donePct}%`, height:'100%', background:'linear-gradient(90deg,#1d6aeb,#7c3aed,#10b981)', transition:'width 0.5s' }}/>
           </div>
-          <span style={{ fontSize:9, color:'#475569', whiteSpace:'nowrap' }}>
-            売手 {statCnt['売手']||0} / 買手 {statCnt['買手']||0} / アポ {statCnt['アポ取得']||0}
-          </span>
+          <span style={{ fontSize:9, color:'#475569', whiteSpace:'nowrap' }}>売手 {statCnt['売手']||0} / 買手 {statCnt['買手']||0} / アポ {statCnt['アポ取得']||0}</span>
         </div>
       </header>
 
@@ -338,10 +276,8 @@ export default function App({ user }) {
           </div>
           {[
             { label:'担当者を一括設定', val:bulkAssignee, set:setBulkAssignee, opts:members.filter(m=>m!=='未割当').map(m=>({v:m,l:m,color:'#1d6aeb'})) },
-            { label:'ステータスを一括設定', val:bulkStatus, set:setBulkStatus,
-              opts:Object.entries(STATUSES).map(([s,c])=>({v:s,l:`${STATUS_ICONS[s]} ${s}`,color:c.color,bg:c.bg,bright:c.bright})) },
-            { label:'🔒 ロックを一括設定', val:bulkLock, set:setBulkLock,
-              opts:[{v:'lock',l:'🔒 一括ロック',color:'#f59e0b'},{v:'unlock',l:'🔓 一括解除',color:'#94a3b8'}] },
+            { label:'ステータスを一括設定', val:bulkStatus, set:setBulkStatus, opts:Object.entries(STATUSES).map(([s,c])=>({v:s,l:`${STATUS_ICONS[s]} ${s}`,color:c.color,bg:c.bg,bright:c.bright})) },
+            { label:'🔒 ロックを一括設定', val:bulkLock, set:setBulkLock, opts:[{v:'lock',l:'🔒 一括ロック',color:'#f59e0b'},{v:'unlock',l:'🔓 一括解除',color:'#94a3b8'}] },
           ].map(({ label, val, set, opts }) => (
             <div key={label} style={{ marginBottom:16 }}>
               <div style={{ fontSize:11, color:'#4a6490', fontWeight:700, marginBottom:8 }}>{label}</div>
@@ -389,19 +325,10 @@ function Modal({ onClose, title, children }) {
         {children}
         <button onClick={onClose} style={{ width:'100%', padding:10, borderRadius:8, border:'1px solid #1a2744', background:'transparent', color:'#4a6490', fontSize:13, fontWeight:700, cursor:'pointer', marginTop:8 }}>閉じる</button>
       </div>
-
-      {/* エリアマップ */}
-      <div style={{ borderRadius:10, background:'#0b1221', border:'1px solid #1a2744', overflow:'hidden' }}>
-        <div style={{ padding:'10px 14px', borderBottom:'1px solid #1a2744', fontSize:12, fontWeight:800, color:'#7ab3ff' }}>🗾 エリア担当マップ</div>
-        <div style={{ padding:14 }}>
-          <AreaMap members={members} memberColors={memberColors}/>
-        </div>
-      </div>
     </div>
   )
 }
 
-// ステータス選択（グループ表示）
 function StatusSelector({ current, onSelect, isMobile }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
@@ -412,8 +339,7 @@ function StatusSelector({ current, onSelect, isMobile }) {
           </div>
           <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
             {statuses.map(s => {
-              const c = STATUSES[s]
-              const on = current === s
+              const c = STATUSES[s]; const on = current === s
               return (
                 <button key={s} onClick={()=>onSelect(s)} style={{ padding:isMobile?'8px 10px':'4px 9px', borderRadius:6, border:`1.5px solid ${on?c.color:'#1a2744'}`, background:on?c.bg:'transparent', color:on?c.bright:'#3b5280', fontSize:11, fontWeight:700, cursor:'pointer' }}>
                   {STATUS_ICONS[s]} {s}
@@ -452,21 +378,16 @@ function ListPanel({ paged, filtered, statCnt, allData, page, setPage, totalPage
           <SS value={fPref||'全て'}   onChange={v=>setFPref(v==='全て'?'':v)}   options={PREFS}/>
           <SS value={fCity||'全て'}   onChange={v=>setFCity(v==='全て'?'':v)}   options={cities}/>
           <SS value={fMember||'全て'} onChange={v=>setFMember(v==='全て'?'':v)} options={['全て',...members]}/>
-          <button onClick={()=>setShowAdv(!showAdv)} style={{ padding:'6px 9px', borderRadius:6, border:`1px solid ${(fChain||fRxMin)?'#3b82f6':'#1a2744'}`, background:(fChain||fRxMin)?'rgba(59,130,246,0.15)':'transparent', color:(fChain||fRxMin)?'#60a5fa':'#3b5280', fontSize:11, cursor:'pointer', fontWeight:700 }}>
-            詳細
-          </button>
+          <button onClick={()=>setShowAdv(!showAdv)} style={{ padding:'6px 9px', borderRadius:6, border:`1px solid ${(fChain||fRxMin)?'#3b82f6':'#1a2744'}`, background:(fChain||fRxMin)?'rgba(59,130,246,0.15)':'transparent', color:(fChain||fRxMin)?'#60a5fa':'#3b5280', fontSize:11, cursor:'pointer', fontWeight:700 }}>詳細</button>
           <span style={{ fontSize:11, color:'#2a3d60', fontWeight:700, whiteSpace:'nowrap' }}>{filtered.length.toLocaleString()}件</span>
         </div>
         {showAdv && (
           <div style={{ padding:'8px 12px', background:'#0b1221', borderBottom:'1px solid #1a2744', display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-            <input value={fChain} onChange={e=>setFChain(e.target.value)} placeholder="社名で絞り込み"
-              style={{ flex:1, minWidth:130, padding:'6px 10px', borderRadius:6, border:`1px solid ${fChain?'#3b82f6':'#1a2744'}`, background:'#080e1a', color:'#c8d4e8', fontSize:12, outline:'none' }}/>
-            <input value={fRxMin} onChange={e=>setFRxMin(e.target.value)} placeholder="処方箋枚以上" type="number"
-              style={{ width:100, padding:'6px 8px', borderRadius:6, border:`1px solid ${fRxMin?'#3b82f6':'#1a2744'}`, background:'#080e1a', color:'#c8d4e8', fontSize:12, outline:'none' }}/>
+            <input value={fChain} onChange={e=>setFChain(e.target.value)} placeholder="社名で絞り込み" style={{ flex:1, minWidth:130, padding:'6px 10px', borderRadius:6, border:`1px solid ${fChain?'#3b82f6':'#1a2744'}`, background:'#080e1a', color:'#c8d4e8', fontSize:12, outline:'none' }}/>
+            <input value={fRxMin} onChange={e=>setFRxMin(e.target.value)} placeholder="処方箋枚以上" type="number" style={{ width:100, padding:'6px 8px', borderRadius:6, border:`1px solid ${fRxMin?'#3b82f6':'#1a2744'}`, background:'#080e1a', color:'#c8d4e8', fontSize:12, outline:'none' }}/>
             <button onClick={()=>{setFChain('');setFRxMin('')}} style={{ padding:'5px 10px', borderRadius:6, border:'1px solid #334155', background:'transparent', color:'#64748b', fontSize:11, cursor:'pointer' }}>クリア</button>
           </div>
         )}
-        {/* ステータスチップ - グループ別 */}
         <div style={{ padding:'6px 12px', background:'#080e1a', borderBottom:'1px solid #1a2744' }}>
           <div style={{ display:'flex', gap:4, alignItems:'center', flexWrap:'wrap' }}>
             <button onClick={()=>setFStatus('')} style={{ padding:'3px 9px', borderRadius:99, border:`1px solid ${!fStatus?'#4a6490':'#1a2744'}`, background:!fStatus?'rgba(74,100,144,0.2)':'transparent', color:!fStatus?'#94a3b8':'#2a3d60', fontSize:10, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>全て {allData.length.toLocaleString()}</button>
@@ -500,13 +421,11 @@ function ListPanel({ paged, filtered, statCnt, allData, page, setPage, totalPage
             {paged.map(({ p, c }) => {
               const st = STATUSES[c.status] || STATUSES['未着手']
               return (
-                <div key={p.id} onClick={()=>setSel(p.id)} style={{ padding:'12px 16px', borderBottom:'1px solid #0d1829', cursor:'pointer', display:'flex', alignItems:'center', gap:12 }}>
+                <div key={p.id} onClick={()=>setSel(p.id)} style={{ padding:'12px 16px', borderBottom:'1px solid #0d1929', cursor:'pointer', display:'flex', alignItems:'center', gap:12 }}>
                   <div style={{ width:4, height:44, borderRadius:99, background:st?.color||'#64748b', flexShrink:0 }}/>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:3 }}>
-                      <div style={{ fontSize:13, fontWeight:700, color:'#e8f0ff', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>
-                        {c.locked&&<span style={{ fontSize:10, marginRight:3 }}>🔒</span>}{p.name}
-                      </div>
+                      <div style={{ fontSize:13, fontWeight:700, color:'#e8f0ff', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{c.locked&&<span style={{ fontSize:10, marginRight:3 }}>🔒</span>}{p.name}</div>
                       <span style={{ padding:'2px 7px', borderRadius:4, background:st?.bg, color:st?.bright, fontSize:10, fontWeight:700, border:`1px solid ${st?.color}44`, marginLeft:8, flexShrink:0 }}>{STATUS_ICONS[c.status]} {c.status}</span>
                     </div>
                     <div style={{ display:'flex', gap:8, fontSize:11, color:'#3b5280' }}>
@@ -533,23 +452,18 @@ function ListPanel({ paged, filtered, statCnt, allData, page, setPage, totalPage
               </thead>
               <tbody>
                 {paged.map(({ p, c }, i) => {
-                  const st = STATUSES[c.status] || STATUSES['未着手']
-                  const isSel = sel===p.id
+                  const st = STATUSES[c.status] || STATUSES['未着手']; const isSel = sel===p.id
                   return (
                     <tr key={p.id} onClick={()=>setSel(isSel?null:p.id)} style={{ background:isSel?'rgba(29,106,235,0.12)':i%2===0?'#080e1a':'#090f1c', cursor:'pointer', borderBottom:'1px solid #0d1829' }}>
                       <td style={{ padding:'5px 8px', textAlign:'center' }}>
                         <button onClick={e=>{e.stopPropagation();toggleLock(p.id)}} style={{ background:'none', border:'none', cursor:'pointer', fontSize:11, color:c.locked?'#f59e0b':'#2a3d60', padding:0 }}>{c.locked?'🔒':'🔓'}</button>
                       </td>
-                      <td style={{ padding:'6px 8px', fontSize:12, color:isSel?'#7ab3ff':'#c8d4e8', fontWeight:600, maxWidth:170, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                        {isSel&&<span style={{ color:'#3b82f6', marginRight:4 }}>▶</span>}{p.name}
-                      </td>
+                      <td style={{ padding:'6px 8px', fontSize:12, color:isSel?'#7ab3ff':'#c8d4e8', fontWeight:600, maxWidth:170, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{isSel&&<span style={{ color:'#3b82f6', marginRight:4 }}>▶</span>}{p.name}</td>
                       <td style={{ padding:'6px 8px', fontSize:11, color:'#4a6490', maxWidth:120, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.chain||'—'}</td>
                       <td style={{ padding:'6px 8px', fontSize:11, color:'#4a6490' }}>{p.pref}</td>
                       <td style={{ padding:'6px 8px', fontSize:11, color:'#4a6490', fontFamily:'monospace' }}>{p.phone||'—'}</td>
                       <td style={{ padding:'6px 8px', fontSize:11, color:'#34d399' }}>{p.rx_count?Number(p.rx_count).toLocaleString():'-'}</td>
-                      <td style={{ padding:'6px 8px' }}>
-                        <span style={{ padding:'2px 7px', borderRadius:4, background:st?.bg, color:st?.bright, fontSize:10, fontWeight:700, border:`1px solid ${st?.color}44` }}>{STATUS_ICONS[c.status]} {c.status}</span>
-                      </td>
+                      <td style={{ padding:'6px 8px' }}><span style={{ padding:'2px 7px', borderRadius:4, background:st?.bg, color:st?.bright, fontSize:10, fontWeight:700, border:`1px solid ${st?.color}44` }}>{STATUS_ICONS[c.status]} {c.status}</span></td>
                       <td style={{ padding:'6px 8px', fontSize:11, color:c.assignee==='未割当'?'#2a3d60':'#7ab3ff' }}>{c.assignee}</td>
                       <td style={{ padding:'6px 8px', fontSize:10, color:'#2a3d60' }}>{c.last_call||'—'}</td>
                     </tr>
@@ -589,9 +503,7 @@ function DetailView({ p, c, eMemo, setEMemo, eNext, setENext, setStatus, setAssi
             </div>
           </div>
           <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-            <button onClick={()=>toggleLock(p.id)} style={{ background:'none', border:`1px solid ${c.locked?'#f59e0b':'#334155'}`, borderRadius:6, color:c.locked?'#f59e0b':'#475569', cursor:'pointer', fontSize:12, padding:'5px 9px', fontWeight:700 }}>
-              {c.locked?'🔒':'🔓'}
-            </button>
+            <button onClick={()=>toggleLock(p.id)} style={{ background:'none', border:`1px solid ${c.locked?'#f59e0b':'#334155'}`, borderRadius:6, color:c.locked?'#f59e0b':'#475569', cursor:'pointer', fontSize:12, padding:'5px 9px', fontWeight:700 }}>{c.locked?'🔒':'🔓'}</button>
             {!isMobile&&<button onClick={onClose} style={{ background:'none', border:'none', color:'#2a3d60', cursor:'pointer', fontSize:20 }}>✕</button>}
           </div>
         </div>
@@ -604,25 +516,18 @@ function DetailView({ p, c, eMemo, setEMemo, eNext, setENext, setStatus, setAssi
         <div>
           <div style={{ fontSize:9, color:'#2a3d60', fontWeight:800, letterSpacing:'0.1em', marginBottom:7, textTransform:'uppercase' }}>担当者</div>
           <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
-            {members.map(m=>{
-              const on = c.assignee===m
-              return <button key={m} onClick={()=>setAssignee(p.id,m)} style={{ padding:'5px 10px', borderRadius:6, border:`1.5px solid ${on?'#1d6aeb':'#1a2744'}`, background:on?'rgba(29,106,235,0.15)':'transparent', color:on?'#7ab3ff':'#3b5280', fontSize:12, fontWeight:700, cursor:'pointer' }}>{m}</button>
-            })}
+            {members.map(m=>{ const on=c.assignee===m; return <button key={m} onClick={()=>setAssignee(p.id,m)} style={{ padding:'5px 10px', borderRadius:6, border:`1.5px solid ${on?'#1d6aeb':'#1a2744'}`, background:on?'rgba(29,106,235,0.15)':'transparent', color:on?'#7ab3ff':'#3b5280', fontSize:12, fontWeight:700, cursor:'pointer' }}>{m}</button> })}
           </div>
         </div>
         <div>
           <div style={{ fontSize:9, color:'#2a3d60', fontWeight:800, letterSpacing:'0.1em', marginBottom:7, textTransform:'uppercase' }}>次回アクション</div>
-          <input value={eNext} onChange={e=>setENext(e.target.value)} placeholder="例：来週月曜に再架電"
-            style={{ width:'100%', padding:'9px 11px', borderRadius:6, border:'1px solid #1a2744', background:'#080e1a', color:'#c8d4e8', fontSize:13, outline:'none', boxSizing:'border-box' }}/>
+          <input value={eNext} onChange={e=>setENext(e.target.value)} placeholder="例：来週月曜に再架電" style={{ width:'100%', padding:'9px 11px', borderRadius:6, border:'1px solid #1a2744', background:'#080e1a', color:'#c8d4e8', fontSize:13, outline:'none', boxSizing:'border-box' }}/>
         </div>
         <div>
           <div style={{ fontSize:9, color:'#2a3d60', fontWeight:800, letterSpacing:'0.1em', marginBottom:7, textTransform:'uppercase' }}>架電メモ</div>
-          <textarea value={eMemo} onChange={e=>setEMemo(e.target.value)} rows={4} placeholder="架電内容・担当者名など..."
-            style={{ width:'100%', padding:'9px 11px', borderRadius:6, border:'1px solid #1a2744', background:'#080e1a', color:'#c8d4e8', fontSize:13, outline:'none', resize:'vertical', boxSizing:'border-box', fontFamily:'inherit' }}/>
+          <textarea value={eMemo} onChange={e=>setEMemo(e.target.value)} rows={4} placeholder="架電内容・担当者名など..." style={{ width:'100%', padding:'9px 11px', borderRadius:6, border:'1px solid #1a2744', background:'#080e1a', color:'#c8d4e8', fontSize:13, outline:'none', resize:'vertical', boxSizing:'border-box', fontFamily:'inherit' }}/>
         </div>
-        <button onClick={saveMemo} style={{ padding:12, borderRadius:8, border:'none', background:'linear-gradient(135deg,#1d6aeb,#7c3aed)', color:'#fff', fontSize:14, fontWeight:800, cursor:'pointer', marginBottom:isMobile?32:0 }}>
-          💾　保存する
-        </button>
+        <button onClick={saveMemo} style={{ padding:12, borderRadius:8, border:'none', background:'linear-gradient(135deg,#1d6aeb,#7c3aed)', color:'#fff', fontSize:14, fontWeight:800, cursor:'pointer', marginBottom:isMobile?32:0 }}>💾　保存する</button>
       </div>
     </div>
   )
@@ -639,21 +544,12 @@ function Dashboard({ allData, statCnt, members, memberColors, isMobile }) {
   const [prefAssignmentsDB, setPrefAssignmentsDB] = useState({})
   useEffect(() => {
     supabase.from('pref_assignments').select('pref_name,member_name').then(({ data }) => {
-      if (data) {
-        const map = {}
-        data.forEach(r => { map[r.pref_name] = r.member_name || '未割当' })
-        setPrefAssignmentsDB(map)
-      }
+      if (data) { const map = {}; data.forEach(r => { map[r.pref_name] = r.member_name || '未割当' }); setPrefAssignmentsDB(map) }
     })
   }, [])
-
   const prefStats = useMemo(() => {
     const r = {}
-    allData.forEach(({ p, c }) => {
-      if(!r[p.pref])r[p.pref]={total:0,done:0}
-      r[p.pref].total++
-      if(c.status!=='未着手')r[p.pref].done++
-    })
+    allData.forEach(({ p, c }) => { if(!r[p.pref])r[p.pref]={total:0,done:0}; r[p.pref].total++; if(c.status!=='未着手')r[p.pref].done++ })
     return Object.entries(r).sort((a,b)=>b[1].total-a[1].total).slice(0,24)
   }, [allData])
   const keyStatuses = ['売手','買手','M&A済み','アポ取得','関心有り','折返し待ち','未着手']
@@ -661,17 +557,14 @@ function Dashboard({ allData, statCnt, members, memberColors, isMobile }) {
     <div style={{ padding:isMobile?12:20, overflowY:'auto', height:'calc(100vh - 82px)', display:'flex', flexDirection:'column', gap:14 }}>
       <div style={{ fontSize:15, fontWeight:800, color:'#e8f0ff' }}>📊 ダッシュボード</div>
       <div style={{ display:'grid', gridTemplateColumns:isMobile?'repeat(3,1fr)':'repeat(auto-fit,minmax(130px,1fr))', gap:8 }}>
-        {keyStatuses.map(s=>{
-          const c = STATUSES[s]
-          return (
-            <div key={s} style={{ padding:isMobile?'10px 8px':'14px', borderRadius:9, background:'#0b1221', border:`1px solid ${c.color}30`, position:'relative', overflow:'hidden' }}>
-              <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:`linear-gradient(90deg,${c.color},transparent)` }}/>
-              <div style={{ fontSize:isMobile?18:22, fontWeight:900, color:c.bright }}>{statCnt[s]||0}</div>
-              <div style={{ fontSize:isMobile?9:11, color:'#4a6490', marginTop:2 }}>{STATUS_ICONS[s]} {s}</div>
-              <div style={{ fontSize:9, color:'#2a3d60', marginTop:2 }}>{Math.round((statCnt[s]||0)/Math.max(total,1)*100)}%</div>
-            </div>
-          )
-        })}
+        {keyStatuses.map(s=>{ const c=STATUSES[s]; return (
+          <div key={s} style={{ padding:isMobile?'10px 8px':'14px', borderRadius:9, background:'#0b1221', border:`1px solid ${c.color}30`, position:'relative', overflow:'hidden' }}>
+            <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:`linear-gradient(90deg,${c.color},transparent)` }}/>
+            <div style={{ fontSize:isMobile?18:22, fontWeight:900, color:c.bright }}>{statCnt[s]||0}</div>
+            <div style={{ fontSize:isMobile?9:11, color:'#4a6490', marginTop:2 }}>{STATUS_ICONS[s]} {s}</div>
+            <div style={{ fontSize:9, color:'#2a3d60', marginTop:2 }}>{Math.round((statCnt[s]||0)/Math.max(total,1)*100)}%</div>
+          </div>
+        )})}
         <div style={{ padding:isMobile?'10px 8px':'14px', borderRadius:9, background:'#0b1221', border:'1px solid #1a2744' }}>
           <div style={{ fontSize:isMobile?18:22, fontWeight:900, color:'#e8f0ff' }}>{total.toLocaleString()}</div>
           <div style={{ fontSize:isMobile?9:11, color:'#4a6490', marginTop:2 }}>📋 総薬局数</div>
@@ -724,21 +617,26 @@ function Dashboard({ allData, statCnt, members, memberColors, isMobile }) {
           })}
         </div>
       </div>
+
+      {/* ── エリア担当マップ ── */}
+      <div style={{ borderRadius:10, background:'#0b1221', border:'1px solid #1a2744', overflow:'hidden' }}>
+        <div style={{ padding:'10px 14px', borderBottom:'1px solid #1a2744', fontSize:12, fontWeight:800, color:'#7ab3ff' }}>🗾 エリア担当マップ</div>
+        <div style={{ padding:14 }}>
+          <AreaMap members={members} memberColors={memberColors}/>
+        </div>
+      </div>
+
     </div>
   )
 }
 
-// ── エリアマップコンポーネント（D3+TopoJSON 本物の日本地図形状版）──────────
+// ── エリアマップコンポーネント（D3+TopoJSON）──
 const LABEL_SIZE = {
   1:12, 3:8, 15:8, 20:8, 21:8, 39:8,
-  2:7, 5:7, 6:7, 7:7, 17:7, 22:7, 28:7, 32:7, 34:7, 35:7, 38:7,
-  40:7, 43:7, 44:7, 45:7, 46:7,
-  4:6.5, 8:6.5, 9:6.5, 10:6.5, 16:6.5, 18:6.5, 19:6.5, 23:6.5,
-  24:6.5, 26:6.5, 29:6.5, 30:6.5, 31:6.5, 33:6.5, 36:6.5, 41:6.5, 42:6.5, 47:6.5,
-  11:6, 12:6, 25:6, 37:6,
-  13:5.5, 14:5.5, 27:5.5,
+  2:7, 5:7, 6:7, 7:7, 17:7, 22:7, 28:7, 32:7, 34:7, 35:7, 38:7, 40:7, 43:7, 44:7, 45:7, 46:7,
+  4:6.5, 8:6.5, 9:6.5, 10:6.5, 16:6.5, 18:6.5, 19:6.5, 23:6.5, 24:6.5, 26:6.5, 29:6.5, 30:6.5, 31:6.5, 33:6.5, 36:6.5, 41:6.5, 42:6.5, 47:6.5,
+  11:6, 12:6, 25:6, 37:6, 13:5.5, 14:5.5, 27:5.5,
 }
-
 const PREF_NAMES_MAP = {
   1:'北海道',2:'青森',3:'岩手',4:'宮城',5:'秋田',6:'山形',7:'福島',
   8:'茨城',9:'栃木',10:'群馬',11:'埼玉',12:'千葉',13:'東京',14:'神奈川',
@@ -749,309 +647,178 @@ const PREF_NAMES_MAP = {
   39:'高知',40:'福岡',41:'佐賀',42:'長崎',43:'熊本',44:'大分',
   45:'宮崎',46:'鹿児島',47:'沖縄'
 }
-
-// 都道府県名（"県"付き）→ ID変換
 const PREF_NAME_TO_ID = {}
 Object.entries(PREF_NAMES_MAP).forEach(([id, name]) => {
-  PREF_NAME_TO_ID[name] = Number(id)
-  PREF_NAME_TO_ID[name + '県'] = Number(id)
-  PREF_NAME_TO_ID[name + '都'] = Number(id)
-  PREF_NAME_TO_ID[name + '府'] = Number(id)
-  PREF_NAME_TO_ID[name + '道'] = Number(id)
+  PREF_NAME_TO_ID[name]=Number(id); PREF_NAME_TO_ID[name+'県']=Number(id)
+  PREF_NAME_TO_ID[name+'都']=Number(id); PREF_NAME_TO_ID[name+'府']=Number(id); PREF_NAME_TO_ID[name+'道']=Number(id)
 })
-
 const REGION_IDS_MAP = {
   '北海道':[1],'東北':[2,3,4,5,6,7],'関東':[8,9,10,11,12,13,14],
   '中部':[15,16,17,18,19,20,21,22,23],'近畿':[24,25,26,27,28,29,30],
-  '中国':[31,32,33,34,35],'四国':[36,37,38,39],
-  '九州':[40,41,42,43,44,45,46],'沖縄':[47],
+  '中国':[31,32,33,34,35],'四国':[36,37,38,39],'九州':[40,41,42,43,44,45,46],'沖縄':[47],
 }
 const PREF_REGION_MAP = {}
 Object.entries(REGION_IDS_MAP).forEach(([r,ids])=>ids.forEach(id=>{PREF_REGION_MAP[id]=r}))
-
 const UNASSIGNED_COLOR = '#1e2d45'
 const TOPO_URL = 'https://cdn.jsdelivr.net/npm/datamaps@0.5.10/src/js/data/jpn.topo.json'
 
 function AreaMap({ members, memberColors }) {
-  const svgRef    = useRef(null)
-  const wrapRef   = useRef(null)
-  const pathsRef  = useRef(null)
-  const labelsRef = useRef(null)
-  const selRef    = useRef('未割当')
-  const asgnRef   = useRef({})
-
-  const [assigns, setAssigns] = useState({})   // { prefId: memberName }
+  const svgRef=useRef(null), wrapRef=useRef(null), pathsRef=useRef(null), labelsRef=useRef(null)
+  const selRef=useRef('未割当'), asgnRef=useRef({})
+  const [assigns, setAssigns] = useState({})
   const [sel, setSel]         = useState('未割当')
-  const [tooltip, setTooltip] = useState({ visible: false, prefId: null, x: 0, y: 0 })
+  const [tooltip, setTooltip] = useState({ visible:false, prefId:null, x:0, y:0 })
   const [mapLoaded, setMapLoaded] = useState(false)
   const [mapErr, setMapErr]   = useState(false)
-  const [saving, setSaving]   = useState(false)
 
-  // refを同期
   useEffect(() => { selRef.current = sel }, [sel])
   useEffect(() => { asgnRef.current = assigns }, [assigns])
 
-  const gc = useCallback((memberName) => {
-    if (!memberName || memberName === '未割当') return UNASSIGNED_COLOR
-    return memberColors[memberName] || '#334155'
+  const gc = useCallback((m) => {
+    if (!m || m === '未割当') return UNASSIGNED_COLOR
+    return memberColors[m] || '#334155'
   }, [memberColors])
 
-  // Supabaseから読み込み
   useEffect(() => {
     supabase.from('pref_assignments').select('pref_id,pref_name,member_name').then(({ data }) => {
       if (data) {
         const map = {}
         data.forEach(r => {
-          // pref_id が入っている場合
-          if (r.pref_id) {
-            map[Number(r.pref_id)] = r.member_name || '未割当'
-          } else if (r.pref_name) {
-            // pref_name だけの場合、名前からIDを解決
-            const id = PREF_NAME_TO_ID[r.pref_name]
-            if (id) map[id] = r.member_name || '未割当'
-          }
+          if (r.pref_id) { map[Number(r.pref_id)] = r.member_name || '未割当' }
+          else if (r.pref_name) { const id = PREF_NAME_TO_ID[r.pref_name]; if (id) map[id] = r.member_name || '未割当' }
         })
         setAssigns(map)
       }
     })
   }, [])
 
-  // D3地図初期化（1回のみ）
   useEffect(() => {
-    const d3 = window.d3, topo = window.topojson
+    const d3=window.d3, topo=window.topojson
     if (!d3 || !topo || !svgRef.current) return
-
-    const proj = d3.geoMercator().center([136.5, 38]).scale(1550).translate([370, 360])
-    const pg   = d3.geoPath(proj)
-    const svg  = d3.select(svgRef.current)
-
-    fetch(TOPO_URL).then(r => r.json()).then(jp => {
-      const features = topo.feature(jp, jp.objects.jpn).features
-
-      // 都道府県パス
-      pathsRef.current = svg.selectAll('.pp')
-        .data(features).join('path')
-        .attr('class', 'pp')
-        .attr('d', pg)
-        .attr('fill', UNASSIGNED_COLOR)
-        .attr('stroke', 'rgba(255,255,255,0.15)')
-        .attr('stroke-width', '0.7')
-        .style('cursor', 'pointer')
-        .on('click', (_, d) => {
-          const currentSel = selRef.current
-          const memberName = currentSel === '未割当' ? '未割当' : currentSel
+    const proj=d3.geoMercator().center([136.5,38]).scale(1550).translate([370,360])
+    const pg=d3.geoPath(proj)
+    const svg=d3.select(svgRef.current)
+    fetch(TOPO_URL).then(r=>r.json()).then(jp => {
+      const features=topo.feature(jp,jp.objects.jpn).features
+      pathsRef.current = svg.selectAll('.pp').data(features).join('path')
+        .attr('class','pp').attr('d',pg).attr('fill',UNASSIGNED_COLOR)
+        .attr('stroke','rgba(255,255,255,0.15)').attr('stroke-width','0.7').style('cursor','pointer')
+        .on('click',(_,d) => {
+          const cur=selRef.current
           setAssigns(prev => {
-            const next = { ...prev }
-            if (next[d.id] === memberName) {
-              delete next[d.id]  // 同じ担当者をクリック → 解除
+            const next={...prev}
+            if (next[d.id]===cur) { delete next[d.id] } else { next[d.id]=cur }
+            const prefName=PREF_NAMES_MAP[d.id]
+            if (next[d.id] && next[d.id]!=='未割当') {
+              supabase.from('pref_assignments').upsert({ pref_id:d.id, pref_name:prefName, member_name:next[d.id], updated_at:new Date().toISOString() },{ onConflict:'pref_id' })
             } else {
-              next[d.id] = memberName
-            }
-            // Supabase保存
-            const prefName = PREF_NAMES_MAP[d.id]
-            if (next[d.id] && next[d.id] !== '未割当') {
-              supabase.from('pref_assignments').upsert(
-                { pref_id: d.id, pref_name: prefName, member_name: next[d.id], updated_at: new Date().toISOString() },
-                { onConflict: 'pref_id' }
-              )
-            } else {
-              supabase.from('pref_assignments').delete().eq('pref_id', d.id)
+              supabase.from('pref_assignments').delete().eq('pref_id',d.id)
             }
             return next
           })
         })
-        .on('mouseenter', (e, d) => {
-          d3.select(e.currentTarget).raise()
-            .attr('opacity', '0.75')
-            .attr('stroke', '#fff')
-            .attr('stroke-width', '1.5')
-          const rect = wrapRef.current?.getBoundingClientRect()
-          if (!rect) return
-          let x = e.clientX - rect.left + 12, y = e.clientY - rect.top - 10
-          if (x + 160 > rect.width) x -= 175
-          setTooltip({ visible: true, prefId: d.id, x, y })
+        .on('mouseenter',(e,d) => {
+          d3.select(e.currentTarget).raise().attr('opacity','0.75').attr('stroke','#fff').attr('stroke-width','1.5')
+          const rect=wrapRef.current?.getBoundingClientRect(); if(!rect)return
+          let x=e.clientX-rect.left+12, y=e.clientY-rect.top-10
+          if(x+160>rect.width)x-=175
+          setTooltip({visible:true,prefId:d.id,x,y})
         })
-        .on('mousemove', e => {
-          const rect = wrapRef.current?.getBoundingClientRect()
-          if (!rect) return
-          let x = e.clientX - rect.left + 12, y = e.clientY - rect.top - 10
-          if (x + 160 > rect.width) x -= 175
-          setTooltip(prev => ({ ...prev, x, y }))
+        .on('mousemove',e => {
+          const rect=wrapRef.current?.getBoundingClientRect(); if(!rect)return
+          let x=e.clientX-rect.left+12, y=e.clientY-rect.top-10
+          if(x+160>rect.width)x-=175
+          setTooltip(prev=>({...prev,x,y}))
         })
-        .on('mouseleave', (e, d) => {
-          const a = asgnRef.current[d.id]
-          d3.select(e.currentTarget).attr('opacity', '1')
-            .attr('stroke', a && a !== '未割当' ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.15)')
-            .attr('stroke-width', '0.7')
-          setTooltip(prev => ({ ...prev, visible: false }))
+        .on('mouseleave',(e,d) => {
+          const a=asgnRef.current[d.id]
+          d3.select(e.currentTarget).attr('opacity','1')
+            .attr('stroke',a&&a!=='未割当'?'rgba(255,255,255,0.25)':'rgba(255,255,255,0.15)').attr('stroke-width','0.7')
+          setTooltip(prev=>({...prev,visible:false}))
         })
-
-      // 都道府県名ラベル（アウトライン付きで視認性UP）
-      labelsRef.current = svg.selectAll('.pl')
-        .data(features).join('text')
-        .attr('class', 'pl')
-        .attr('x', d => pg.centroid(d)[0])
-        .attr('y', d => pg.centroid(d)[1] + 1)
-        .attr('text-anchor', 'middle')
-        .attr('dominant-baseline', 'middle')
-        .attr('font-size', d => LABEL_SIZE[d.id] || 6.5)
-        .attr('font-family', "'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif")
-        .attr('fill', '#7ab3ff')
-        .attr('font-weight', '500')
-        .attr('paint-order', 'stroke')
-        .attr('stroke', 'rgba(8,14,26,0.8)')
-        .attr('stroke-width', '2.5')
-        .attr('stroke-linejoin', 'round')
-        .attr('pointer-events', 'none')
-        .text(d => PREF_NAMES_MAP[d.id] || '')
-
+      labelsRef.current = svg.selectAll('.pl').data(features).join('text')
+        .attr('class','pl').attr('x',d=>pg.centroid(d)[0]).attr('y',d=>pg.centroid(d)[1]+1)
+        .attr('text-anchor','middle').attr('dominant-baseline','middle')
+        .attr('font-size',d=>LABEL_SIZE[d.id]||6.5)
+        .attr('font-family',"'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif")
+        .attr('fill','#7ab3ff').attr('font-weight','500')
+        .attr('paint-order','stroke').attr('stroke','rgba(8,14,26,0.8)').attr('stroke-width','2.5').attr('stroke-linejoin','round')
+        .attr('pointer-events','none').text(d=>PREF_NAMES_MAP[d.id]||'')
       setMapLoaded(true)
-    }).catch(() => { setMapErr(true) })
+    }).catch(()=>setMapErr(true))
   }, [])
 
-  // assigns変化時にD3描画を更新
   useEffect(() => {
     if (!pathsRef.current || !labelsRef.current) return
     pathsRef.current
-      .attr('fill', d => {
-        const m = assigns[d.id]
-        return (m && m !== '未割当') ? gc(m) : UNASSIGNED_COLOR
-      })
-      .attr('stroke', d => {
-        const m = assigns[d.id]
-        return (m && m !== '未割当') ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.15)'
-      })
+      .attr('fill',d=>{ const m=assigns[d.id]; return (m&&m!=='未割当')?gc(m):UNASSIGNED_COLOR })
+      .attr('stroke',d=>{ const m=assigns[d.id]; return (m&&m!=='未割当')?'rgba(255,255,255,0.25)':'rgba(255,255,255,0.15)' })
     labelsRef.current
-      .attr('fill', d => {
-        const m = assigns[d.id]
-        return (m && m !== '未割当') ? 'rgba(255,255,255,0.95)' : '#7ab3ff'
-      })
-      .attr('font-weight', d => {
-        const m = assigns[d.id]
-        return (m && m !== '未割当') ? '700' : '500'
-      })
-      .attr('stroke', d => {
-        const m = assigns[d.id]
-        return (m && m !== '未割当') ? 'rgba(0,0,0,0.4)' : 'rgba(8,14,26,0.8)'
-      })
+      .attr('fill',d=>{ const m=assigns[d.id]; return (m&&m!=='未割当')?'rgba(255,255,255,0.95)':'#7ab3ff' })
+      .attr('font-weight',d=>{ const m=assigns[d.id]; return (m&&m!=='未割当')?'700':'500' })
+      .attr('stroke',d=>{ const m=assigns[d.id]; return (m&&m!=='未割当')?'rgba(0,0,0,0.4)':'rgba(8,14,26,0.8)' })
   }, [assigns, gc])
 
-  // 地方一括設定
   const bulkRegion = useCallback((region) => {
-    if (sel === '未割当') return
-    const ids = REGION_IDS_MAP[region] || []
-    setAssigns(prev => {
-      const next = { ...prev }
-      ids.forEach(id => { next[id] = sel })
-      return next
-    })
-    // Supabase一括保存
-    const rows = ids.map(id => ({
-      pref_id: id,
-      pref_name: PREF_NAMES_MAP[id],
-      member_name: sel,
-      updated_at: new Date().toISOString()
-    }))
-    supabase.from('pref_assignments').upsert(rows, { onConflict: 'pref_id' })
+    if (sel==='未割当') return
+    const ids=REGION_IDS_MAP[region]||[]
+    setAssigns(prev=>{ const next={...prev}; ids.forEach(id=>{next[id]=sel}); return next })
+    supabase.from('pref_assignments').upsert(ids.map(id=>({ pref_id:id, pref_name:PREF_NAMES_MAP[id], member_name:sel, updated_at:new Date().toISOString() })),{ onConflict:'pref_id' })
   }, [sel])
 
   const clearAll = useCallback(async () => {
     if (!window.confirm('全担当をクリアしますか？')) return
     setAssigns({})
-    await supabase.from('pref_assignments').delete().neq('pref_id', 0)
+    await supabase.from('pref_assignments').delete().neq('pref_id',0)
   }, [])
 
-  const tipAssignee = tooltip.prefId != null ? assigns[tooltip.prefId] : null
-  const memberList = ['未割当', ...members.filter(m => m !== '未割当')]
+  const tipAssignee = tooltip.prefId!=null ? assigns[tooltip.prefId] : null
+  const memberList = ['未割当',...members.filter(m=>m!=='未割当')]
 
   return (
     <div>
-      {/* 担当者選択ボタン */}
       <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10, alignItems:'center' }}>
         <span style={{ fontSize:11, color:'#4a6490', marginRight:2, whiteSpace:'nowrap' }}>担当者を選択してから都道府県をクリック：</span>
         {memberList.map(m => {
-          const c = gc(m)
-          const active = sel === m
-          const cnt = Object.values(assigns).filter(v => v === m).length
+          const c=gc(m), active=sel===m, cnt=Object.values(assigns).filter(v=>v===m).length
           return (
-            <button key={m} onClick={() => setSel(m)} style={{
-              padding:'4px 10px', borderRadius:7,
-              border:`2px solid ${active ? c : '#1a2744'}`,
-              background: active ? c + '33' : 'transparent',
-              color: active ? c : '#4a6490',
-              fontSize:12, fontWeight:700, cursor:'pointer',
-              display:'flex', alignItems:'center', gap:4,
-            }}>
-              {m !== '未割当' && <span style={{ width:7,height:7,borderRadius:'50%',background:c,display:'inline-block',flexShrink:0 }}/>}
-              {m}
-              {cnt > 0 && <span style={{ fontSize:10, opacity:0.8 }}>{cnt}</span>}
+            <button key={m} onClick={()=>setSel(m)} style={{ padding:'4px 10px', borderRadius:7, border:`2px solid ${active?c:'#1a2744'}`, background:active?c+'33':'transparent', color:active?c:'#4a6490', fontSize:12, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
+              {m!=='未割当'&&<span style={{ width:7,height:7,borderRadius:'50%',background:c,display:'inline-block',flexShrink:0 }}/>}
+              {m}{cnt>0&&<span style={{ fontSize:10,opacity:0.8 }}>{cnt}</span>}
             </button>
           )
         })}
       </div>
-
-      {/* 地方一括ボタン */}
-      {sel !== '未割当' && (
+      {sel!=='未割当' && (
         <div style={{ display:'flex', gap:4, flexWrap:'wrap', marginBottom:8, alignItems:'center' }}>
           <span style={{ fontSize:10, color:'#2a3d60', marginRight:2 }}>地方一括:</span>
-          {Object.keys(REGION_IDS_MAP).map(r => (
-            <button key={r} onClick={() => bulkRegion(r)} style={{
-              fontSize:10, padding:'2px 8px', borderRadius:9,
-              border:'1px solid #1a2744', background:'transparent',
-              color:'#4a6490', cursor:'pointer',
-            }}>{r}</button>
+          {Object.keys(REGION_IDS_MAP).map(r=>(
+            <button key={r} onClick={()=>bulkRegion(r)} style={{ fontSize:10, padding:'2px 8px', borderRadius:9, border:'1px solid #1a2744', background:'transparent', color:'#4a6490', cursor:'pointer' }}>{r}</button>
           ))}
-          <button onClick={clearAll} style={{
-            fontSize:10, padding:'2px 8px', borderRadius:9,
-            border:'1px solid #7f1d1d', background:'transparent',
-            color:'#f87171', cursor:'pointer', marginLeft:'auto',
-          }}>全クリア</button>
+          <button onClick={clearAll} style={{ fontSize:10, padding:'2px 8px', borderRadius:9, border:'1px solid #7f1d1d', background:'transparent', color:'#f87171', cursor:'pointer', marginLeft:'auto' }}>全クリア</button>
         </div>
       )}
-
-      {/* SVG地図 */}
       <div ref={wrapRef} style={{ position:'relative', width:'100%', background:'#080e1a', borderRadius:8, overflow:'hidden', border:'1px solid #1a2744' }}>
-        {!mapLoaded && !mapErr && (
-          <div style={{ padding:'40px', textAlign:'center', color:'#3b5280', fontSize:13 }}>地図を読み込み中...</div>
-        )}
-        {mapErr && (
-          <div style={{ padding:'40px', textAlign:'center', color:'#3b5280', fontSize:13 }}>地図データの読み込みに失敗しました</div>
-        )}
-        <svg ref={svgRef} viewBox="0 0 800 700" style={{ width:'100%', display:'block' }} />
-
-        {/* ツールチップ */}
-        {tooltip.visible && tooltip.prefId != null && (
-          <div style={{
-            position:'absolute', left:tooltip.x, top:tooltip.y,
-            background:'#0d1829', border:`1px solid ${gc(tipAssignee)}55`,
-            borderRadius:8, padding:'6px 10px',
-            pointerEvents:'none', zIndex:50, fontSize:12, whiteSpace:'nowrap',
-          }}>
+        {!mapLoaded&&!mapErr&&<div style={{ padding:'40px', textAlign:'center', color:'#3b5280', fontSize:13 }}>地図を読み込み中...</div>}
+        {mapErr&&<div style={{ padding:'40px', textAlign:'center', color:'#3b5280', fontSize:13 }}>地図データの読み込みに失敗しました</div>}
+        <svg ref={svgRef} viewBox="0 0 800 700" style={{ width:'100%', display:'block' }}/>
+        {tooltip.visible && tooltip.prefId!=null && (
+          <div style={{ position:'absolute', left:tooltip.x, top:tooltip.y, background:'#0d1829', border:`1px solid ${gc(tipAssignee)}55`, borderRadius:8, padding:'6px 10px', pointerEvents:'none', zIndex:50, fontSize:12, whiteSpace:'nowrap' }}>
             <div style={{ fontWeight:700, color:'#e8f0ff', marginBottom:3 }}>
-              {PREF_NAMES_MAP[tooltip.prefId]}
-              <span style={{ fontSize:10, color:'#3b5280', marginLeft:5 }}>
-                {PREF_REGION_MAP[tooltip.prefId]}
-              </span>
+              {PREF_NAMES_MAP[tooltip.prefId]}<span style={{ fontSize:10, color:'#3b5280', marginLeft:5 }}>{PREF_REGION_MAP[tooltip.prefId]}</span>
             </div>
             <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11 }}>
-              {tipAssignee && tipAssignee !== '未割当' ? (
-                <>
-                  <span style={{ width:7,height:7,borderRadius:'50%',background:gc(tipAssignee),display:'inline-block' }}/>
-                  <span style={{ color:gc(tipAssignee), fontWeight:700 }}>{tipAssignee}</span>
-                </>
-              ) : (
-                <span style={{ color:'#3b5280' }}>未割当</span>
-              )}
+              {tipAssignee&&tipAssignee!=='未割当'
+                ? <><span style={{ width:7,height:7,borderRadius:'50%',background:gc(tipAssignee),display:'inline-block' }}/><span style={{ color:gc(tipAssignee),fontWeight:700 }}>{tipAssignee}</span></>
+                : <span style={{ color:'#3b5280' }}>未割当</span>
+              }
             </div>
           </div>
         )}
       </div>
-
-      {/* 凡例 */}
       <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginTop:10, padding:'8px 12px', borderRadius:8, background:'#080e1a', border:'1px solid #1a2744' }}>
-        {members.filter(m => m !== '未割当').map(m => {
-          const cnt = Object.values(assigns).filter(v => v === m).length
-          const c = gc(m)
+        {members.filter(m=>m!=='未割当').map(m => {
+          const cnt=Object.values(assigns).filter(v=>v===m).length, c=gc(m)
           return (
             <div key={m} style={{ display:'flex', alignItems:'center', gap:5 }}>
               <span style={{ width:10,height:10,borderRadius:3,background:c,display:'inline-block',flexShrink:0 }}/>
