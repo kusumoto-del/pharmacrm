@@ -554,7 +554,7 @@ function Dashboard({ allData, statCnt, members, memberColors, isMobile }) {
   }, [allData])
   const keyStatuses = ['売手','買手','M&A済み','アポ取得','関心有り','折返し待ち','未着手']
   return (
-    <div style={{ padding:isMobile?12:20, overflowY:'auto', height:'calc(100vh - 82px)', display:'flex', flexDirection:'column', gap:14 }}>
+    <div style={{ padding:isMobile?12:20, overflowY:'auto', minHeight:'calc(100vh - 82px)', display:'flex', flexDirection:'column', gap:14 }}>
       <div style={{ fontSize:15, fontWeight:800, color:'#e8f0ff' }}>📊 ダッシュボード</div>
       <div style={{ display:'grid', gridTemplateColumns:isMobile?'repeat(3,1fr)':'repeat(auto-fit,minmax(130px,1fr))', gap:8 }}>
         {keyStatuses.map(s=>{ const c=STATUSES[s]; return (
