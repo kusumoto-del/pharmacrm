@@ -7,13 +7,7 @@ import * as XLSX from 'xlsx'
 const PAGE = 100
 const PREFS = ['全て','北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県','新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県','愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県','和歌山県','鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県']
 
-// 都道府県名の正規化（"県"/"都"/"府"/"道" 付きでもマッチ）
-const PREF_NORMALIZE = {}
-PREFS.filter(p=>p!=='全て').forEach(p => {
-  PREF_NORMALIZE[p] = p
-  const base = p.replace(/[都道府県]$/, '')
-  PREF_NORMALIZE[base] = p
-})
+// 都道府県名の正規化テーブル（p.prefはPREFS配列と同じ形式）
 
 function useIsMobile() {
   const [v, setV] = useState(window.innerWidth < 768)
@@ -160,17 +154,14 @@ export default function App({ user }) {
 
   // ── エリアマップから呼ばれる：県の薬局を一括担当者変更（ロック除外）──
   const applyAreaAssign = useCallback(async (prefName, memberName) => {
-    // prefName は "北海道" 形式、p.pref は "北海道" または "北海道道" 等
-    // allDataのp.prefと突き合わせるため正規化
-    const normalizedPref = PREF_NORMALIZE[prefName] || prefName
-    const targets = allData.filter(({ p, c }) => p.pref === normalizedPref && !c.locked)
+    // prefName は PREF_NAMES_MAP の値（"北海道", "青森県" 等）
+    // p.pref も同じ形式（"北海道", "青森県" 等）なので直接マッチ
+    const targets = allData.filter(({ p, c }) => p.pref === prefName && !c.locked)
     if (!targets.length) return
-    // ローカル即時反映
     setAllData(prev => prev.map(r => {
-      if (r.p.pref !== normalizedPref || r.c.locked) return r
+      if (r.p.pref !== prefName || r.c.locked) return r
       return { ...r, c: { ...r.c, assignee: memberName } }
     }))
-    // DB一括更新
     const BATCH = 500
     for (let i = 0; i < targets.length; i += BATCH) {
       const batch = targets.slice(i, i + BATCH).map(({ p, c }) => ({
@@ -674,14 +665,14 @@ const LABEL_SIZE = {
   11:6, 12:6, 25:6, 37:6, 13:5.5, 14:5.5, 27:5.5,
 }
 const PREF_NAMES_MAP = {
-  1:'北海道',2:'青森',3:'岩手',4:'宮城',5:'秋田',6:'山形',7:'福島',
-  8:'茨城',9:'栃木',10:'群馬',11:'埼玉',12:'千葉',13:'東京',14:'神奈川',
-  15:'新潟',16:'富山',17:'石川',18:'福井',19:'山梨',20:'長野',
-  21:'岐阜',22:'静岡',23:'愛知',24:'三重',25:'滋賀',26:'京都',
-  27:'大阪',28:'兵庫',29:'奈良',30:'和歌山',31:'鳥取',32:'島根',
-  33:'岡山',34:'広島',35:'山口',36:'徳島',37:'香川',38:'愛媛',
-  39:'高知',40:'福岡',41:'佐賀',42:'長崎',43:'熊本',44:'大分',
-  45:'宮崎',46:'鹿児島',47:'沖縄'
+  1:'北海道',2:'青森県',3:'岩手県',4:'宮城県',5:'秋田県',6:'山形県',7:'福島県',
+  8:'茨城県',9:'栃木県',10:'群馬県',11:'埼玉県',12:'千葉県',13:'東京都',14:'神奈川県',
+  15:'新潟県',16:'富山県',17:'石川県',18:'福井県',19:'山梨県',20:'長野県',
+  21:'岐阜県',22:'静岡県',23:'愛知県',24:'三重県',25:'滋賀県',26:'京都府',
+  27:'大阪府',28:'兵庫県',29:'奈良県',30:'和歌山県',31:'鳥取県',32:'島根県',
+  33:'岡山県',34:'広島県',35:'山口県',36:'徳島県',37:'香川県',38:'愛媛県',
+  39:'高知県',40:'福岡県',41:'佐賀県',42:'長崎県',43:'熊本県',44:'大分県',
+  45:'宮崎県',46:'鹿児島県',47:'沖縄県'
 }
 const PREF_NAME_TO_ID = {}
 Object.entries(PREF_NAMES_MAP).forEach(([id, name]) => {
@@ -827,9 +818,8 @@ function AreaMap({ members, memberColors, applyAreaAssign, allData }) {
     if (!assignedPrefs.length) { setApplyMsg('先に都道府県に担当者を割り当ててください'); return }
     const totalUnlocked = assignedPrefs.reduce((sum,[id])=>{
       const pn = PREF_NAMES_MAP[id]
-      const normalized = PREF_NORMALIZE[pn] || pn
-      return sum + (prefStats[normalized]?.unlocked || prefStats[pn+'県']?.unlocked || prefStats[pn+'都']?.unlocked || prefStats[pn+'府']?.unlocked || prefStats[pn+'道']?.unlocked || prefStats[pn]?.unlocked || 0)
-    },0)
+      return sum + (prefStats[pn]?.unlocked || 0)
+    }, 0)
     if (!window.confirm(`エリアマップの担当設定を架電リストに反映します。\n対象：${assignedPrefs.length}都道府県 / 約${totalUnlocked.toLocaleString()}件（ロック済みは除外）\nよろしいですか？`)) return
     setApplying(true)
     setApplyMsg('架電リストに反映中...')
