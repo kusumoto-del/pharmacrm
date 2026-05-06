@@ -7,6 +7,14 @@ import * as XLSX from 'xlsx'
 const PAGE = 100
 const PREFS = ['全て','北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県','新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県','愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県','和歌山県','鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県']
 
+// 都道府県名の正規化（"県"/"都"/"府"/"道" 付きでもマッチ）
+const PREF_NORMALIZE = {}
+PREFS.filter(p=>p!=='全て').forEach(p => {
+  PREF_NORMALIZE[p] = p
+  const base = p.replace(/[都道府県]$/, '')
+  PREF_NORMALIZE[base] = p
+})
+
 function useIsMobile() {
   const [v, setV] = useState(window.innerWidth < 768)
   useEffect(() => { const f = () => setV(window.innerWidth < 768); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f) }, [])
@@ -150,6 +158,34 @@ export default function App({ user }) {
     saveTimer.current = setTimeout(() => syncDB(sel, { memo: eMemo, next_action: eNext }), 500)
   }
 
+  // ── エリアマップから呼ばれる：県の薬局を一括担当者変更（ロック除外）──
+  const applyAreaAssign = useCallback(async (prefName, memberName) => {
+    // prefName は "北海道" 形式、p.pref は "北海道" または "北海道道" 等
+    // allDataのp.prefと突き合わせるため正規化
+    const normalizedPref = PREF_NORMALIZE[prefName] || prefName
+    const targets = allData.filter(({ p, c }) => p.pref === normalizedPref && !c.locked)
+    if (!targets.length) return
+    // ローカル即時反映
+    setAllData(prev => prev.map(r => {
+      if (r.p.pref !== normalizedPref || r.c.locked) return r
+      return { ...r, c: { ...r.c, assignee: memberName } }
+    }))
+    // DB一括更新
+    const BATCH = 500
+    for (let i = 0; i < targets.length; i += BATCH) {
+      const batch = targets.slice(i, i + BATCH).map(({ p, c }) => ({
+        pharmacy_id: p.id,
+        status: c.status || '未着手',
+        assignee: memberName,
+        locked: c.locked || false,
+        memo: c.memo || '',
+        next_action: c.next_action || '',
+        updated_by: user.id,
+      }))
+      await supabase.from('call_records').upsert(batch, { onConflict: 'pharmacy_id' })
+    }
+  }, [allData, user])
+
   const executeBulk = useCallback(async () => {
     if (!bulkAssignee && !bulkStatus && !bulkLock) return
     const targets = filtered.filter(r => !r.c.locked)
@@ -251,7 +287,7 @@ export default function App({ user }) {
       </header>
 
       {tab === 'dashboard' ? (
-        <Dashboard allData={allData} statCnt={statCnt} members={members} memberColors={memberColors} isMobile={isMobile}/>
+        <Dashboard allData={allData} statCnt={statCnt} members={members} memberColors={memberColors} isMobile={isMobile} applyAreaAssign={applyAreaAssign}/>
       ) : (
         <ListPanel
           paged={paged} filtered={filtered} statCnt={statCnt} allData={allData}
@@ -533,7 +569,7 @@ function DetailView({ p, c, eMemo, setEMemo, eNext, setENext, setStatus, setAssi
   )
 }
 
-function Dashboard({ allData, statCnt, members, memberColors, isMobile }) {
+function Dashboard({ allData, statCnt, members, memberColors, isMobile, applyAreaAssign }) {
   const total = allData.length
   const memberStats = useMemo(() => {
     const r = {}
@@ -622,7 +658,7 @@ function Dashboard({ allData, statCnt, members, memberColors, isMobile }) {
       <div style={{ borderRadius:10, background:'#0b1221', border:'1px solid #1a2744', overflow:'hidden' }}>
         <div style={{ padding:'10px 14px', borderBottom:'1px solid #1a2744', fontSize:12, fontWeight:800, color:'#7ab3ff' }}>🗾 エリア担当マップ</div>
         <div style={{ padding:14 }}>
-          <AreaMap members={members} memberColors={memberColors}/>
+          <AreaMap members={members} memberColors={memberColors} applyAreaAssign={applyAreaAssign} allData={allData}/>
         </div>
       </div>
 
@@ -662,7 +698,7 @@ Object.entries(REGION_IDS_MAP).forEach(([r,ids])=>ids.forEach(id=>{PREF_REGION_M
 const UNASSIGNED_COLOR = '#1e2d45'
 const TOPO_URL = 'https://cdn.jsdelivr.net/npm/datamaps@0.5.10/src/js/data/jpn.topo.json'
 
-function AreaMap({ members, memberColors }) {
+function AreaMap({ members, memberColors, applyAreaAssign, allData }) {
   const svgRef=useRef(null), wrapRef=useRef(null), pathsRef=useRef(null), labelsRef=useRef(null)
   const selRef=useRef('未割当'), asgnRef=useRef({})
   const [assigns, setAssigns] = useState({})
@@ -670,6 +706,8 @@ function AreaMap({ members, memberColors }) {
   const [tooltip, setTooltip] = useState({ visible:false, prefId:null, x:0, y:0 })
   const [mapLoaded, setMapLoaded] = useState(false)
   const [mapErr, setMapErr]   = useState(false)
+  const [applying, setApplying] = useState(false)
+  const [applyMsg, setApplyMsg] = useState('')
 
   useEffect(() => { selRef.current = sel }, [sel])
   useEffect(() => { asgnRef.current = assigns }, [assigns])
@@ -678,6 +716,17 @@ function AreaMap({ members, memberColors }) {
     if (!m || m === '未割当') return UNASSIGNED_COLOR
     return memberColors[m] || '#334155'
   }, [memberColors])
+
+  // 都道府県の薬局件数（ロック除外）を計算
+  const prefStats = useMemo(() => {
+    const r = {}
+    allData.forEach(({ p, c }) => {
+      if (!r[p.pref]) r[p.pref] = { total:0, unlocked:0 }
+      r[p.pref].total++
+      if (!c.locked) r[p.pref].unlocked++
+    })
+    return r
+  }, [allData])
 
   useEffect(() => {
     supabase.from('pref_assignments').select('pref_id,pref_name,member_name').then(({ data }) => {
@@ -772,11 +821,36 @@ function AreaMap({ members, memberColors }) {
     await supabase.from('pref_assignments').delete().neq('pref_id',0)
   }, [])
 
+  // ── 架電リストに連動して一括割り当て ──
+  const applyToList = useCallback(async () => {
+    const assignedPrefs = Object.entries(assigns).filter(([,m])=>m&&m!=='未割当')
+    if (!assignedPrefs.length) { setApplyMsg('先に都道府県に担当者を割り当ててください'); return }
+    const totalUnlocked = assignedPrefs.reduce((sum,[id])=>{
+      const pn = PREF_NAMES_MAP[id]
+      const normalized = PREF_NORMALIZE[pn] || pn
+      return sum + (prefStats[normalized]?.unlocked || prefStats[pn+'県']?.unlocked || prefStats[pn+'都']?.unlocked || prefStats[pn+'府']?.unlocked || prefStats[pn+'道']?.unlocked || prefStats[pn]?.unlocked || 0)
+    },0)
+    if (!window.confirm(`エリアマップの担当設定を架電リストに反映します。\n対象：${assignedPrefs.length}都道府県 / 約${totalUnlocked.toLocaleString()}件（ロック済みは除外）\nよろしいですか？`)) return
+    setApplying(true)
+    setApplyMsg('架電リストに反映中...')
+    let done = 0
+    for (const [id, memberName] of assignedPrefs) {
+      const prefName = PREF_NAMES_MAP[id]
+      await applyAreaAssign(prefName, memberName)
+      done++
+      setApplyMsg(`反映中... ${done}/${assignedPrefs.length}件`)
+    }
+    setApplying(false)
+    setApplyMsg(`✅ ${assignedPrefs.length}都道府県の架電リストを更新しました（ロック済みは除外）`)
+    setTimeout(()=>setApplyMsg(''),5000)
+  }, [assigns, applyAreaAssign, prefStats])
+
   const tipAssignee = tooltip.prefId!=null ? assigns[tooltip.prefId] : null
   const memberList = ['未割当',...members.filter(m=>m!=='未割当')]
 
   return (
     <div>
+      {/* 担当者選択ボタン */}
       <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10, alignItems:'center' }}>
         <span style={{ fontSize:11, color:'#4a6490', marginRight:2, whiteSpace:'nowrap' }}>担当者を選択してから都道府県をクリック：</span>
         {memberList.map(m => {
@@ -789,6 +863,8 @@ function AreaMap({ members, memberColors }) {
           )
         })}
       </div>
+
+      {/* 地方一括・架電リスト反映ボタン */}
       {sel!=='未割当' && (
         <div style={{ display:'flex', gap:4, flexWrap:'wrap', marginBottom:8, alignItems:'center' }}>
           <span style={{ fontSize:10, color:'#2a3d60', marginRight:2 }}>地方一括:</span>
@@ -798,6 +874,8 @@ function AreaMap({ members, memberColors }) {
           <button onClick={clearAll} style={{ fontSize:10, padding:'2px 8px', borderRadius:9, border:'1px solid #7f1d1d', background:'transparent', color:'#f87171', cursor:'pointer', marginLeft:'auto' }}>全クリア</button>
         </div>
       )}
+
+      {/* 地図SVG */}
       <div ref={wrapRef} style={{ position:'relative', width:'100%', background:'#080e1a', borderRadius:8, overflow:'hidden', border:'1px solid #1a2744' }}>
         {!mapLoaded&&!mapErr&&<div style={{ padding:'40px', textAlign:'center', color:'#3b5280', fontSize:13 }}>地図を読み込み中...</div>}
         {mapErr&&<div style={{ padding:'40px', textAlign:'center', color:'#3b5280', fontSize:13 }}>地図データの読み込みに失敗しました</div>}
@@ -816,6 +894,8 @@ function AreaMap({ members, memberColors }) {
           </div>
         )}
       </div>
+
+      {/* 凡例 */}
       <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginTop:10, padding:'8px 12px', borderRadius:8, background:'#080e1a', border:'1px solid #1a2744' }}>
         {members.filter(m=>m!=='未割当').map(m => {
           const cnt=Object.values(assigns).filter(v=>v===m).length, c=gc(m)
@@ -828,6 +908,23 @@ function AreaMap({ members, memberColors }) {
           )
         })}
       </div>
+
+      {/* 架電リスト反映ボタン */}
+      <div style={{ marginTop:12, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+        <button
+          onClick={applyToList}
+          disabled={applying}
+          style={{ padding:'8px 20px', borderRadius:8, border:'none', background:applying?'#1a2744':'linear-gradient(135deg,#1d6aeb,#7c3aed)', color:'#fff', fontSize:13, fontWeight:700, cursor:applying?'default':'pointer', display:'flex', alignItems:'center', gap:6 }}
+        >
+          {applying ? '⏳ 反映中...' : '⚡ 架電リストに担当者を一括反映'}
+        </button>
+        <span style={{ fontSize:11, color:'#4a6490' }}>※ 🔒ロック済みの店舗は変更されません</span>
+      </div>
+      {applyMsg && (
+        <div style={{ marginTop:8, fontSize:12, color: applyMsg.startsWith('✅') ? '#22c55e' : '#f59e0b', padding:'6px 10px', borderRadius:6, background:'#0d1829', border:`1px solid ${applyMsg.startsWith('✅')?'#22c55e33':'#f59e0b33'}` }}>
+          {applyMsg}
+        </div>
+      )}
     </div>
   )
 }
