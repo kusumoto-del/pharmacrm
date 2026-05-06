@@ -7,8 +7,6 @@ import * as XLSX from 'xlsx'
 const PAGE = 100
 const PREFS = ['全て','北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県','新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県','愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県','和歌山県','鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県']
 
-// 都道府県名の正規化テーブル（p.prefはPREFS配列と同じ形式）
-
 function useIsMobile() {
   const [v, setV] = useState(window.innerWidth < 768)
   useEffect(() => { const f = () => setV(window.innerWidth < 768); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f) }, [])
@@ -31,6 +29,38 @@ function exportCSV(filtered) {
   const csv = rows.map(r=>r.map(v=>`"${(v||'').replace(/"/g,'""')}"`).join(',')).join('\n')
   const a = document.createElement('a'); a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv'})); a.download='架電リスト.csv'; a.click()
 }
+
+// ── エリアマップ定数（グローバルで定義）──
+const PREF_NAMES_MAP = {
+  1:'北海道',2:'青森県',3:'岩手県',4:'宮城県',5:'秋田県',6:'山形県',7:'福島県',
+  8:'茨城県',9:'栃木県',10:'群馬県',11:'埼玉県',12:'千葉県',13:'東京都',14:'神奈川県',
+  15:'新潟県',16:'富山県',17:'石川県',18:'福井県',19:'山梨県',20:'長野県',
+  21:'岐阜県',22:'静岡県',23:'愛知県',24:'三重県',25:'滋賀県',26:'京都府',
+  27:'大阪府',28:'兵庫県',29:'奈良県',30:'和歌山県',31:'鳥取県',32:'島根県',
+  33:'岡山県',34:'広島県',35:'山口県',36:'徳島県',37:'香川県',38:'愛媛県',
+  39:'高知県',40:'福岡県',41:'佐賀県',42:'長崎県',43:'熊本県',44:'大分県',
+  45:'宮崎県',46:'鹿児島県',47:'沖縄県'
+}
+const PREF_NAME_TO_ID = {}
+Object.entries(PREF_NAMES_MAP).forEach(([id, name]) => { PREF_NAME_TO_ID[name] = Number(id) })
+
+const REGION_IDS_MAP = {
+  '北海道':[1],'東北':[2,3,4,5,6,7],'関東':[8,9,10,11,12,13,14],
+  '中部':[15,16,17,18,19,20,21,22,23],'近畿':[24,25,26,27,28,29,30],
+  '中国':[31,32,33,34,35],'四国':[36,37,38,39],'九州':[40,41,42,43,44,45,46],'沖縄':[47],
+}
+const PREF_REGION_MAP = {}
+Object.entries(REGION_IDS_MAP).forEach(([r,ids])=>ids.forEach(id=>{PREF_REGION_MAP[id]=r}))
+
+const LABEL_SIZE = {
+  1:12, 3:8, 15:8, 20:8, 21:8, 39:8,
+  2:7, 5:7, 6:7, 7:7, 17:7, 22:7, 28:7, 32:7, 34:7, 35:7, 38:7, 40:7, 43:7, 44:7, 45:7, 46:7,
+  4:6.5, 8:6.5, 9:6.5, 10:6.5, 16:6.5, 18:6.5, 19:6.5, 23:6.5, 24:6.5, 26:6.5, 29:6.5,
+  30:6.5, 31:6.5, 33:6.5, 36:6.5, 41:6.5, 42:6.5, 47:6.5,
+  11:6, 12:6, 25:6, 37:6, 13:5.5, 14:5.5, 27:5.5,
+}
+const UNASSIGNED_COLOR = '#1e2d45'
+const TOPO_URL = 'https://cdn.jsdelivr.net/npm/datamaps@0.5.10/src/js/data/jpn.topo.json'
 
 export default function App({ user }) {
   const isMobile = useIsMobile()
@@ -60,8 +90,9 @@ export default function App({ user }) {
   const [bulkAssignee,setBulkAssignee] = useState('')
   const [bulkStatus,  setBulkStatus]   = useState('')
   const [bulkLock,    setBulkLock]     = useState('')
-  const [bulkLock,    setBulkLock]     = useState('')
-  const [areaAssigns, setAreaAssigns] = useState({})
+  // ── エリアマップの担当割り当て（App最上位で保持・タブ切り替えで消えない）──
+  const [areaAssigns, setAreaAssigns] = useState({}) // { prefId: memberName }
+  const saveTimer = useRef(null)
 
   useEffect(() => {
     supabase.from('members').select('name,color').order('id').then(({ data }) => {
@@ -105,6 +136,23 @@ export default function App({ user }) {
     }
     load()
     return () => { cancelled = true }
+  }, [])
+
+  // ── エリアマップの割り当てをSupabaseから初回読み込み ──
+  useEffect(() => {
+    supabase.from('pref_assignments').select('pref_id,pref_name,member_name').then(({ data, error }) => {
+      if (error) { console.error('pref_assignments load error:', error); return }
+      if (data && data.length > 0) {
+        const map = {}
+        data.forEach(r => {
+          if (r.pref_id && r.member_name && r.member_name !== '未割当') {
+            map[Number(r.pref_id)] = r.member_name
+          }
+        })
+        console.log('Loaded pref_assignments:', map)
+        setAreaAssigns(map)
+      }
+    })
   }, [])
 
   const filtered = useMemo(() => {
@@ -153,29 +201,47 @@ export default function App({ user }) {
     saveTimer.current = setTimeout(() => syncDB(sel, { memo: eMemo, next_action: eNext }), 500)
   }
 
-  // ── エリアマップから呼ばれる：県の薬局を一括担当者変更（ロック除外）──
-  const applyAreaAssign = useCallback(async (prefName, memberName) => {
-    // prefName は PREF_NAMES_MAP の値（"北海道", "青森県" 等）
-    // p.pref も同じ形式（"北海道", "青森県" 等）なので直接マッチ
-    const targets = allData.filter(({ p, c }) => p.pref === prefName && !c.locked)
-    if (!targets.length) return
+  // ── エリアマップ → 架電リスト一括連動 ──
+  const applyAreaToList = useCallback(async (currentAssigns) => {
+    const entries = Object.entries(currentAssigns).filter(([,m]) => m && m !== '未割当')
+    if (!entries.length) return { ok: false, msg: '先に都道府県に担当者を割り当ててください' }
+
+    // 対象件数を計算
+    const prefNames = entries.map(([id]) => PREF_NAMES_MAP[Number(id)])
+    const targets = allData.filter(({ p, c }) => prefNames.includes(p.pref) && !c.locked)
+
+    if (!window.confirm(`エリアマップの担当設定を架電リストに反映します。\n対象：${entries.length}都道府県 / ${targets.length.toLocaleString()}件\n（🔒ロック済みは除外）\nよろしいですか？`)) {
+      return { ok: false, msg: 'キャンセルしました' }
+    }
+
+    // prefName → memberName のマップ
+    const prefToMember = {}
+    entries.forEach(([id, m]) => { prefToMember[PREF_NAMES_MAP[Number(id)]] = m })
+
+    // ローカル即時反映
     setAllData(prev => prev.map(r => {
-      if (r.p.pref !== prefName || r.c.locked) return r
-      return { ...r, c: { ...r.c, assignee: memberName } }
+      const member = prefToMember[r.p.pref]
+      if (!member || r.c.locked) return r
+      return { ...r, c: { ...r.c, assignee: member } }
     }))
+
+    // Supabase一括更新
     const BATCH = 500
     for (let i = 0; i < targets.length; i += BATCH) {
       const batch = targets.slice(i, i + BATCH).map(({ p, c }) => ({
         pharmacy_id: p.id,
         status: c.status || '未着手',
-        assignee: memberName,
+        assignee: prefToMember[p.pref],
         locked: c.locked || false,
         memo: c.memo || '',
         next_action: c.next_action || '',
         updated_by: user.id,
       }))
-      await supabase.from('call_records').upsert(batch, { onConflict: 'pharmacy_id' })
+      const { error } = await supabase.from('call_records').upsert(batch, { onConflict: 'pharmacy_id' })
+      if (error) { console.error('call_records upsert error:', error); return { ok: false, msg: '保存エラー: ' + error.message } }
     }
+
+    return { ok: true, msg: `✅ ${entries.length}都道府県 / ${targets.length.toLocaleString()}件を反映しました（ロック除外）` }
   }, [allData, user])
 
   const executeBulk = useCallback(async () => {
@@ -279,7 +345,7 @@ export default function App({ user }) {
       </header>
 
       {tab === 'dashboard' ? (
-        <Dashboard allData={allData} statCnt={statCnt} members={members} memberColors={memberColors} isMobile={isMobile} applyAreaAssign={applyAreaAssign} areaAssigns={areaAssigns} setAreaAssigns={setAreaAssigns}/>
+        <Dashboard allData={allData} statCnt={statCnt} members={members} memberColors={memberColors} isMobile={isMobile} areaAssigns={areaAssigns} setAreaAssigns={setAreaAssigns} applyAreaToList={applyAreaToList}/>
       ) : (
         <ListPanel
           paged={paged} filtered={filtered} statCnt={statCnt} allData={allData}
@@ -561,7 +627,7 @@ function DetailView({ p, c, eMemo, setEMemo, eNext, setENext, setStatus, setAssi
   )
 }
 
-function Dashboard({ allData, statCnt, members, memberColors, isMobile, applyAreaAssign, areaAssigns, setAreaAssigns }) {
+function Dashboard({ allData, statCnt, members, memberColors, isMobile, areaAssigns, setAreaAssigns, applyAreaToList }) {
   const total = allData.length
   const memberStats = useMemo(() => {
     const r = {}
@@ -571,10 +637,15 @@ function Dashboard({ allData, statCnt, members, memberColors, isMobile, applyAre
   }, [allData, members])
   const [prefAssignmentsDB, setPrefAssignmentsDB] = useState({})
   useEffect(() => {
-    supabase.from('pref_assignments').select('pref_name,member_name').then(({ data }) => {
-      if (data) { const map = {}; data.forEach(r => { map[r.pref_name] = r.member_name || '未割当' }); setPrefAssignmentsDB(map) }
+    // areaAssigns から表示用マップを構築（DB再読み込み不要）
+    const map = {}
+    Object.entries(areaAssigns).forEach(([id, m]) => {
+      const prefName = PREF_NAMES_MAP[Number(id)]
+      if (prefName) map[prefName] = m
     })
-  }, [])
+    setPrefAssignmentsDB(map)
+  }, [areaAssigns])
+
   const prefStats = useMemo(() => {
     const r = {}
     allData.forEach(({ p, c }) => { if(!r[p.pref])r[p.pref]={total:0,done:0}; r[p.pref].total++; if(c.status!=='未着手')r[p.pref].done++ })
@@ -645,202 +716,174 @@ function Dashboard({ allData, statCnt, members, memberColors, isMobile, applyAre
           })}
         </div>
       </div>
-
-      {/* ── エリア担当マップ ── */}
       <div style={{ borderRadius:10, background:'#0b1221', border:'1px solid #1a2744', overflow:'hidden' }}>
         <div style={{ padding:'10px 14px', borderBottom:'1px solid #1a2744', fontSize:12, fontWeight:800, color:'#7ab3ff' }}>🗾 エリア担当マップ</div>
         <div style={{ padding:14 }}>
-          <AreaMap members={members} memberColors={memberColors} applyAreaAssign={applyAreaAssign} allData={allData} areaAssigns={areaAssigns} setAreaAssigns={setAreaAssigns}/>
+          <AreaMap members={members} memberColors={memberColors} allData={allData} areaAssigns={areaAssigns} setAreaAssigns={setAreaAssigns} applyAreaToList={applyAreaToList}/>
         </div>
       </div>
-
     </div>
   )
 }
 
-// ── エリアマップコンポーネント（D3+TopoJSON）──
-const LABEL_SIZE = {
-  1:12, 3:8, 15:8, 20:8, 21:8, 39:8,
-  2:7, 5:7, 6:7, 7:7, 17:7, 22:7, 28:7, 32:7, 34:7, 35:7, 38:7, 40:7, 43:7, 44:7, 45:7, 46:7,
-  4:6.5, 8:6.5, 9:6.5, 10:6.5, 16:6.5, 18:6.5, 19:6.5, 23:6.5, 24:6.5, 26:6.5, 29:6.5, 30:6.5, 31:6.5, 33:6.5, 36:6.5, 41:6.5, 42:6.5, 47:6.5,
-  11:6, 12:6, 25:6, 37:6, 13:5.5, 14:5.5, 27:5.5,
-}
-const PREF_NAMES_MAP = {
-  1:'北海道',2:'青森県',3:'岩手県',4:'宮城県',5:'秋田県',6:'山形県',7:'福島県',
-  8:'茨城県',9:'栃木県',10:'群馬県',11:'埼玉県',12:'千葉県',13:'東京都',14:'神奈川県',
-  15:'新潟県',16:'富山県',17:'石川県',18:'福井県',19:'山梨県',20:'長野県',
-  21:'岐阜県',22:'静岡県',23:'愛知県',24:'三重県',25:'滋賀県',26:'京都府',
-  27:'大阪府',28:'兵庫県',29:'奈良県',30:'和歌山県',31:'鳥取県',32:'島根県',
-  33:'岡山県',34:'広島県',35:'山口県',36:'徳島県',37:'香川県',38:'愛媛県',
-  39:'高知県',40:'福岡県',41:'佐賀県',42:'長崎県',43:'熊本県',44:'大分県',
-  45:'宮崎県',46:'鹿児島県',47:'沖縄県'
-}
-const PREF_NAME_TO_ID = {}
-Object.entries(PREF_NAMES_MAP).forEach(([id, name]) => {
-  PREF_NAME_TO_ID[name]=Number(id); PREF_NAME_TO_ID[name+'県']=Number(id)
-  PREF_NAME_TO_ID[name+'都']=Number(id); PREF_NAME_TO_ID[name+'府']=Number(id); PREF_NAME_TO_ID[name+'道']=Number(id)
-})
-const REGION_IDS_MAP = {
-  '北海道':[1],'東北':[2,3,4,5,6,7],'関東':[8,9,10,11,12,13,14],
-  '中部':[15,16,17,18,19,20,21,22,23],'近畿':[24,25,26,27,28,29,30],
-  '中国':[31,32,33,34,35],'四国':[36,37,38,39],'九州':[40,41,42,43,44,45,46],'沖縄':[47],
-}
-const PREF_REGION_MAP = {}
-Object.entries(REGION_IDS_MAP).forEach(([r,ids])=>ids.forEach(id=>{PREF_REGION_MAP[id]=r}))
-const UNASSIGNED_COLOR = '#1e2d45'
-const TOPO_URL = 'https://cdn.jsdelivr.net/npm/datamaps@0.5.10/src/js/data/jpn.topo.json'
+// ── AreaMap：D3クリックを useRef で完全制御（stale closure なし）──
+function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, applyAreaToList }) {
+  const svgRef     = useRef(null)
+  const wrapRef    = useRef(null)
+  const pathsRef   = useRef(null)
+  const labelsRef  = useRef(null)
+  const mapInitRef = useRef(false)
 
-function AreaMap({ members, memberColors, applyAreaAssign, allData, areaAssigns, setAreaAssigns }) {
-  const svgRef=useRef(null), wrapRef=useRef(null), pathsRef=useRef(null), labelsRef=useRef(null)
-  const selRef=useRef('未割当'), asgnRef=useRef({})
-  // assigns は App から props で受け取る（タブ切り替えで保持）
-  const assigns = areaAssigns
-  const setAssigns = setAreaAssigns
-  const [sel, setSel]         = useState('未割当')
-  const [tooltip, setTooltip] = useState({ visible:false, prefId:null, x:0, y:0 })
+  // D3ハンドラから参照するための最新値 ref
+  const selRef          = useRef('未割当')
+  const areaAssignsRef  = useRef(areaAssigns)
+  const memberColorsRef = useRef(memberColors)
+
+  const [sel, setSel]           = useState('未割当')
+  const [tooltip, setTooltip]   = useState({ visible:false, prefId:null, x:0, y:0 })
   const [mapLoaded, setMapLoaded] = useState(false)
-  const [mapErr, setMapErr]   = useState(false)
+  const [mapErr, setMapErr]     = useState(false)
   const [applying, setApplying] = useState(false)
   const [applyMsg, setApplyMsg] = useState('')
 
+  // ref を常に最新に保つ
   useEffect(() => { selRef.current = sel }, [sel])
-  useEffect(() => { asgnRef.current = assigns }, [assigns])
+  useEffect(() => { areaAssignsRef.current = areaAssigns }, [areaAssigns])
+  useEffect(() => { memberColorsRef.current = memberColors }, [memberColors])
 
-  const gc = useCallback((m) => {
+  const gc = (m) => {
     if (!m || m === '未割当') return UNASSIGNED_COLOR
-    return memberColors[m] || '#334155'
-  }, [memberColors])
+    return memberColorsRef.current[m] || '#334155'
+  }
 
-  // 都道府県の薬局件数（ロック除外）を計算
-  const prefStats = useMemo(() => {
-    const r = {}
-    allData.forEach(({ p, c }) => {
-      if (!r[p.pref]) r[p.pref] = { total:0, unlocked:0 }
-      r[p.pref].total++
-      if (!c.locked) r[p.pref].unlocked++
-    })
-    return r
-  }, [allData])
-
-  useEffect(() => { // 初回のみ読み込み（既にデータあれば再読み込みしない）
-    supabase.from('pref_assignments').select('pref_id,pref_name,member_name').then(({ data }) => {
-      if (data) {
-        const map = {}
-        data.forEach(r => {
-          if (r.pref_id) { map[Number(r.pref_id)] = r.member_name || '未割当' }
-          else if (r.pref_name) { const id = PREF_NAME_TO_ID[r.pref_name]; if (id) map[id] = r.member_name || '未割当' }
-        })
-        setAssigns(map)
-      }
-    })
-  // eslint-disable-next-line
-  }, [])  // mountedときのみ
-
+  // D3地図を一度だけ初期化
   useEffect(() => {
-    const d3=window.d3, topo=window.topojson
+    if (mapInitRef.current) return
+    const d3 = window.d3, topo = window.topojson
     if (!d3 || !topo || !svgRef.current) return
-    const proj=d3.geoMercator().center([136.5,38]).scale(1550).translate([370,360])
-    const pg=d3.geoPath(proj)
-    const svg=d3.select(svgRef.current)
-    fetch(TOPO_URL).then(r=>r.json()).then(jp => {
-      const features=topo.feature(jp,jp.objects.jpn).features
+    mapInitRef.current = true
+
+    const proj = d3.geoMercator().center([136.5, 38]).scale(1550).translate([370, 360])
+    const pg   = d3.geoPath(proj)
+    const svg  = d3.select(svgRef.current)
+
+    fetch(TOPO_URL).then(r => r.json()).then(jp => {
+      const features = topo.feature(jp, jp.objects.jpn).features
+
       pathsRef.current = svg.selectAll('.pp').data(features).join('path')
-        .attr('class','pp').attr('d',pg).attr('fill',UNASSIGNED_COLOR)
-        .attr('stroke','rgba(255,255,255,0.15)').attr('stroke-width','0.7').style('cursor','pointer')
-        .on('click',(_,d) => {
-          const cur=selRef.current
-          setAssigns(prev => {
-            const next={...prev}
-            if (next[d.id]===cur) { delete next[d.id] } else { next[d.id]=cur }
-            const prefName=PREF_NAMES_MAP[d.id]
-            if (next[d.id] && next[d.id]!=='未割当') {
-              supabase.from('pref_assignments').upsert({ pref_id:d.id, pref_name:prefName, member_name:next[d.id], updated_at:new Date().toISOString() },{ onConflict:'pref_id' })
-            } else {
-              supabase.from('pref_assignments').delete().eq('pref_id',d.id)
-            }
-            return next
-          })
+        .attr('class', 'pp').attr('d', pg)
+        .attr('fill', UNASSIGNED_COLOR)
+        .attr('stroke', 'rgba(255,255,255,0.15)').attr('stroke-width', '0.7')
+        .style('cursor', 'pointer')
+        .on('click', (_, d) => {
+          // ← refから最新値を取得（stale closureを完全回避）
+          const curSel    = selRef.current
+          const curAssigns = { ...areaAssignsRef.current }
+
+          if (curSel === '未割当') {
+            delete curAssigns[d.id]
+          } else if (curAssigns[d.id] === curSel) {
+            delete curAssigns[d.id]  // 同じ担当者クリックで解除
+          } else {
+            curAssigns[d.id] = curSel
+          }
+
+          // Supabase保存
+          const prefName = PREF_NAMES_MAP[d.id]
+          if (curAssigns[d.id]) {
+            supabase.from('pref_assignments')
+              .upsert({ pref_id: d.id, pref_name: prefName, member_name: curAssigns[d.id], updated_at: new Date().toISOString() }, { onConflict: 'pref_id' })
+              .then(({ error }) => { if (error) console.error('upsert error:', error) })
+          } else {
+            supabase.from('pref_assignments').delete().eq('pref_id', d.id)
+              .then(({ error }) => { if (error) console.error('delete error:', error) })
+          }
+
+          // React stateを更新（これがD3の再描画をトリガー）
+          setAreaAssigns(curAssigns)
         })
-        .on('mouseenter',(e,d) => {
-          d3.select(e.currentTarget).raise().attr('opacity','0.75').attr('stroke','#fff').attr('stroke-width','1.5')
-          const rect=wrapRef.current?.getBoundingClientRect(); if(!rect)return
-          let x=e.clientX-rect.left+12, y=e.clientY-rect.top-10
-          if(x+160>rect.width)x-=175
-          setTooltip({visible:true,prefId:d.id,x,y})
+        .on('mouseenter', (e, d) => {
+          d3.select(e.currentTarget).raise().attr('opacity', '0.75').attr('stroke', '#fff').attr('stroke-width', '1.5')
+          const rect = wrapRef.current?.getBoundingClientRect()
+          if (!rect) return
+          let x = e.clientX - rect.left + 12, y = e.clientY - rect.top - 10
+          if (x + 160 > rect.width) x -= 175
+          setTooltip({ visible: true, prefId: d.id, x, y })
         })
-        .on('mousemove',e => {
-          const rect=wrapRef.current?.getBoundingClientRect(); if(!rect)return
-          let x=e.clientX-rect.left+12, y=e.clientY-rect.top-10
-          if(x+160>rect.width)x-=175
-          setTooltip(prev=>({...prev,x,y}))
+        .on('mousemove', (e) => {
+          const rect = wrapRef.current?.getBoundingClientRect()
+          if (!rect) return
+          let x = e.clientX - rect.left + 12, y = e.clientY - rect.top - 10
+          if (x + 160 > rect.width) x -= 175
+          setTooltip(prev => ({ ...prev, x, y }))
         })
-        .on('mouseleave',(e,d) => {
-          const a=asgnRef.current[d.id]
-          d3.select(e.currentTarget).attr('opacity','1')
-            .attr('stroke',a&&a!=='未割当'?'rgba(255,255,255,0.25)':'rgba(255,255,255,0.15)').attr('stroke-width','0.7')
-          setTooltip(prev=>({...prev,visible:false}))
+        .on('mouseleave', (e, d) => {
+          const a = areaAssignsRef.current[d.id]
+          d3.select(e.currentTarget).attr('opacity', '1')
+            .attr('stroke', a && a !== '未割当' ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.15)')
+            .attr('stroke-width', '0.7')
+          setTooltip(prev => ({ ...prev, visible: false }))
         })
+
       labelsRef.current = svg.selectAll('.pl').data(features).join('text')
-        .attr('class','pl').attr('x',d=>pg.centroid(d)[0]).attr('y',d=>pg.centroid(d)[1]+1)
-        .attr('text-anchor','middle').attr('dominant-baseline','middle')
-        .attr('font-size',d=>LABEL_SIZE[d.id]||6.5)
-        .attr('font-family',"'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif")
-        .attr('fill','#7ab3ff').attr('font-weight','500')
-        .attr('paint-order','stroke').attr('stroke','rgba(8,14,26,0.8)').attr('stroke-width','2.5').attr('stroke-linejoin','round')
-        .attr('pointer-events','none').text(d=>PREF_NAMES_MAP[d.id]||'')
+        .attr('class', 'pl')
+        .attr('x', d => pg.centroid(d)[0]).attr('y', d => pg.centroid(d)[1] + 1)
+        .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+        .attr('font-size', d => LABEL_SIZE[d.id] || 6.5)
+        .attr('font-family', "'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif")
+        .attr('fill', '#7ab3ff').attr('font-weight', '500')
+        .attr('paint-order', 'stroke').attr('stroke', 'rgba(8,14,26,0.8)')
+        .attr('stroke-width', '2.5').attr('stroke-linejoin', 'round')
+        .attr('pointer-events', 'none')
+        .text(d => PREF_NAMES_MAP[d.id] || '')
+
       setMapLoaded(true)
-    }).catch(()=>setMapErr(true))
+    }).catch(e => { console.error('map load error:', e); setMapErr(true) })
   }, [])
 
+  // areaAssigns 変化時に D3 の色を更新
   useEffect(() => {
     if (!pathsRef.current || !labelsRef.current) return
     pathsRef.current
-      .attr('fill',d=>{ const m=assigns[d.id]; return (m&&m!=='未割当')?gc(m):UNASSIGNED_COLOR })
-      .attr('stroke',d=>{ const m=assigns[d.id]; return (m&&m!=='未割当')?'rgba(255,255,255,0.25)':'rgba(255,255,255,0.15)' })
+      .attr('fill', d => { const m = areaAssigns[d.id]; return (m && m !== '未割当') ? (memberColors[m] || '#334155') : UNASSIGNED_COLOR })
+      .attr('stroke', d => { const m = areaAssigns[d.id]; return (m && m !== '未割当') ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.15)' })
     labelsRef.current
-      .attr('fill',d=>{ const m=assigns[d.id]; return (m&&m!=='未割当')?'rgba(255,255,255,0.95)':'#7ab3ff' })
-      .attr('font-weight',d=>{ const m=assigns[d.id]; return (m&&m!=='未割当')?'700':'500' })
-      .attr('stroke',d=>{ const m=assigns[d.id]; return (m&&m!=='未割当')?'rgba(0,0,0,0.4)':'rgba(8,14,26,0.8)' })
-  }, [assigns, gc])
+      .attr('fill', d => { const m = areaAssigns[d.id]; return (m && m !== '未割当') ? 'rgba(255,255,255,0.95)' : '#7ab3ff' })
+      .attr('font-weight', d => { const m = areaAssigns[d.id]; return (m && m !== '未割当') ? '700' : '500' })
+      .attr('stroke', d => { const m = areaAssigns[d.id]; return (m && m !== '未割当') ? 'rgba(0,0,0,0.4)' : 'rgba(8,14,26,0.8)' })
+  }, [areaAssigns, memberColors])
 
-  const bulkRegion = useCallback((region) => {
-    if (sel==='未割当') return
-    const ids=REGION_IDS_MAP[region]||[]
-    setAssigns(prev=>{ const next={...prev}; ids.forEach(id=>{next[id]=sel}); return next })
-    supabase.from('pref_assignments').upsert(ids.map(id=>({ pref_id:id, pref_name:PREF_NAMES_MAP[id], member_name:sel, updated_at:new Date().toISOString() })),{ onConflict:'pref_id' })
-  }, [sel])
+  // 地方一括
+  const bulkRegion = (region) => {
+    if (sel === '未割当') return
+    const ids = REGION_IDS_MAP[region] || []
+    const next = { ...areaAssigns }
+    ids.forEach(id => { next[id] = sel })
+    setAreaAssigns(next)
+    supabase.from('pref_assignments').upsert(
+      ids.map(id => ({ pref_id: id, pref_name: PREF_NAMES_MAP[id], member_name: sel, updated_at: new Date().toISOString() })),
+      { onConflict: 'pref_id' }
+    ).then(({ error }) => { if (error) console.error('bulk upsert error:', error) })
+  }
 
-  const clearAll = useCallback(async () => {
+  const clearAll = async () => {
     if (!window.confirm('全担当をクリアしますか？')) return
-    setAssigns({})
-    await supabase.from('pref_assignments').delete().neq('pref_id',0)
-  }, [])
+    setAreaAssigns({})
+    const { error } = await supabase.from('pref_assignments').delete().neq('pref_id', 0)
+    if (error) console.error('clear error:', error)
+  }
 
-  // ── 架電リストに連動して一括割り当て ──
-  const applyToList = useCallback(async () => {
-    const assignedPrefs = Object.entries(assigns).filter(([,m])=>m&&m!=='未割当')
-    if (!assignedPrefs.length) { setApplyMsg('先に都道府県に担当者を割り当ててください'); return }
-    const totalUnlocked = assignedPrefs.reduce((sum,[id])=>{
-      const pn = PREF_NAMES_MAP[id]
-      return sum + (prefStats[pn]?.unlocked || 0)
-    }, 0)
-    if (!window.confirm(`エリアマップの担当設定を架電リストに反映します。\n対象：${assignedPrefs.length}都道府県 / 約${totalUnlocked.toLocaleString()}件（ロック済みは除外）\nよろしいですか？`)) return
+  const handleApply = async () => {
     setApplying(true)
-    setApplyMsg('架電リストに反映中...')
-    let done = 0
-    for (const [id, memberName] of assignedPrefs) {
-      const prefName = PREF_NAMES_MAP[id]
-      await applyAreaAssign(prefName, memberName)
-      done++
-      setApplyMsg(`反映中... ${done}/${assignedPrefs.length}件`)
-    }
+    setApplyMsg('反映中...')
+    const result = await applyAreaToList(areaAssigns)
     setApplying(false)
-    setApplyMsg(`✅ ${assignedPrefs.length}都道府県の架電リストを更新しました（ロック済みは除外）`)
-    setTimeout(()=>setApplyMsg(''),5000)
-  }, [assigns, applyAreaAssign, prefStats])
+    setApplyMsg(result.msg)
+    if (result.ok) setTimeout(() => setApplyMsg(''), 6000)
+  }
 
-  const tipAssignee = tooltip.prefId!=null ? assigns[tooltip.prefId] : null
-  const memberList = ['未割当',...members.filter(m=>m!=='未割当')]
+  const tipAssignee = tooltip.prefId != null ? areaAssigns[tooltip.prefId] : null
+  const memberList = ['未割当', ...members.filter(m => m !== '未割当')]
 
   return (
     <div>
@@ -848,40 +891,43 @@ function AreaMap({ members, memberColors, applyAreaAssign, allData, areaAssigns,
       <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10, alignItems:'center' }}>
         <span style={{ fontSize:11, color:'#4a6490', marginRight:2, whiteSpace:'nowrap' }}>担当者を選択してから都道府県をクリック：</span>
         {memberList.map(m => {
-          const c=gc(m), active=sel===m, cnt=Object.values(assigns).filter(v=>v===m).length
+          const color = m === '未割当' ? '#334155' : (memberColors[m] || '#334155')
+          const active = sel === m
+          const cnt = Object.values(areaAssigns).filter(v => v === m).length
           return (
-            <button key={m} onClick={()=>setSel(m)} style={{ padding:'4px 10px', borderRadius:7, border:`2px solid ${active?c:'#1a2744'}`, background:active?c+'33':'transparent', color:active?c:'#4a6490', fontSize:12, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
-              {m!=='未割当'&&<span style={{ width:7,height:7,borderRadius:'50%',background:c,display:'inline-block',flexShrink:0 }}/>}
-              {m}{cnt>0&&<span style={{ fontSize:10,opacity:0.8 }}>{cnt}</span>}
+            <button key={m} onClick={() => setSel(m)} style={{ padding:'4px 10px', borderRadius:7, border:`2px solid ${active ? color : '#1a2744'}`, background: active ? color + '33' : 'transparent', color: active ? color : '#4a6490', fontSize:12, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
+              {m !== '未割当' && <span style={{ width:7, height:7, borderRadius:'50%', background:color, display:'inline-block', flexShrink:0 }}/>}
+              {m}{cnt > 0 && <span style={{ fontSize:10, opacity:0.8 }}>{cnt}</span>}
             </button>
           )
         })}
       </div>
 
-      {/* 地方一括・架電リスト反映ボタン */}
-      {sel!=='未割当' && (
+      {/* 地方一括ボタン */}
+      {sel !== '未割当' && (
         <div style={{ display:'flex', gap:4, flexWrap:'wrap', marginBottom:8, alignItems:'center' }}>
           <span style={{ fontSize:10, color:'#2a3d60', marginRight:2 }}>地方一括:</span>
-          {Object.keys(REGION_IDS_MAP).map(r=>(
-            <button key={r} onClick={()=>bulkRegion(r)} style={{ fontSize:10, padding:'2px 8px', borderRadius:9, border:'1px solid #1a2744', background:'transparent', color:'#4a6490', cursor:'pointer' }}>{r}</button>
+          {Object.keys(REGION_IDS_MAP).map(r => (
+            <button key={r} onClick={() => bulkRegion(r)} style={{ fontSize:10, padding:'2px 8px', borderRadius:9, border:'1px solid #1a2744', background:'transparent', color:'#4a6490', cursor:'pointer' }}>{r}</button>
           ))}
           <button onClick={clearAll} style={{ fontSize:10, padding:'2px 8px', borderRadius:9, border:'1px solid #7f1d1d', background:'transparent', color:'#f87171', cursor:'pointer', marginLeft:'auto' }}>全クリア</button>
         </div>
       )}
 
-      {/* 地図SVG */}
+      {/* SVG地図 */}
       <div ref={wrapRef} style={{ position:'relative', width:'100%', background:'#080e1a', borderRadius:8, overflow:'hidden', border:'1px solid #1a2744' }}>
-        {!mapLoaded&&!mapErr&&<div style={{ padding:'40px', textAlign:'center', color:'#3b5280', fontSize:13 }}>地図を読み込み中...</div>}
-        {mapErr&&<div style={{ padding:'40px', textAlign:'center', color:'#3b5280', fontSize:13 }}>地図データの読み込みに失敗しました</div>}
+        {!mapLoaded && !mapErr && <div style={{ padding:'40px', textAlign:'center', color:'#3b5280', fontSize:13 }}>地図を読み込み中...</div>}
+        {mapErr && <div style={{ padding:'40px', textAlign:'center', color:'#ef4444', fontSize:13 }}>地図データの読み込みに失敗しました</div>}
         <svg ref={svgRef} viewBox="0 0 800 700" style={{ width:'100%', display:'block' }}/>
-        {tooltip.visible && tooltip.prefId!=null && (
-          <div style={{ position:'absolute', left:tooltip.x, top:tooltip.y, background:'#0d1829', border:`1px solid ${gc(tipAssignee)}55`, borderRadius:8, padding:'6px 10px', pointerEvents:'none', zIndex:50, fontSize:12, whiteSpace:'nowrap' }}>
+        {tooltip.visible && tooltip.prefId != null && (
+          <div style={{ position:'absolute', left:tooltip.x, top:tooltip.y, background:'#0d1829', border:`1px solid ${tipAssignee&&tipAssignee!=='未割当'?(memberColors[tipAssignee]||'#3b82f6')+'55':'#2a3d60'}`, borderRadius:8, padding:'6px 10px', pointerEvents:'none', zIndex:50, fontSize:12, whiteSpace:'nowrap' }}>
             <div style={{ fontWeight:700, color:'#e8f0ff', marginBottom:3 }}>
-              {PREF_NAMES_MAP[tooltip.prefId]}<span style={{ fontSize:10, color:'#3b5280', marginLeft:5 }}>{PREF_REGION_MAP[tooltip.prefId]}</span>
+              {PREF_NAMES_MAP[tooltip.prefId]}
+              <span style={{ fontSize:10, color:'#3b5280', marginLeft:5 }}>{PREF_REGION_MAP[tooltip.prefId]}</span>
             </div>
             <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11 }}>
-              {tipAssignee&&tipAssignee!=='未割当'
-                ? <><span style={{ width:7,height:7,borderRadius:'50%',background:gc(tipAssignee),display:'inline-block' }}/><span style={{ color:gc(tipAssignee),fontWeight:700 }}>{tipAssignee}</span></>
+              {tipAssignee && tipAssignee !== '未割当'
+                ? <><span style={{ width:7, height:7, borderRadius:'50%', background:memberColors[tipAssignee]||'#3b82f6', display:'inline-block' }}/><span style={{ color:memberColors[tipAssignee]||'#3b82f6', fontWeight:700 }}>{tipAssignee}</span></>
                 : <span style={{ color:'#3b5280' }}>未割当</span>
               }
             </div>
@@ -891,35 +937,31 @@ function AreaMap({ members, memberColors, applyAreaAssign, allData, areaAssigns,
 
       {/* 凡例 */}
       <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginTop:10, padding:'8px 12px', borderRadius:8, background:'#080e1a', border:'1px solid #1a2744' }}>
-        {members.filter(m=>m!=='未割当').map(m => {
-          const cnt=Object.values(assigns).filter(v=>v===m).length, c=gc(m)
+        {members.filter(m => m !== '未割当').map(m => {
+          const cnt = Object.values(areaAssigns).filter(v => v === m).length
+          const color = memberColors[m] || '#334155'
           return (
             <div key={m} style={{ display:'flex', alignItems:'center', gap:5 }}>
-              <span style={{ width:10,height:10,borderRadius:3,background:c,display:'inline-block',flexShrink:0 }}/>
+              <span style={{ width:10, height:10, borderRadius:3, background:color, display:'inline-block', flexShrink:0 }}/>
               <span style={{ fontSize:11, color:'#94a3b8' }}>{m}</span>
-              <span style={{ fontSize:11, color:c, fontWeight:700 }}>{cnt}県</span>
+              <span style={{ fontSize:11, color, fontWeight:700 }}>{cnt}県</span>
             </div>
           )
         })}
       </div>
 
-      {/* 架電リスト反映ボタン */}
+      {/* 架電リスト一括反映ボタン */}
       <div style={{ marginTop:12, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
-        <button
-          onClick={applyToList}
-          disabled={applying}
-          style={{ padding:'8px 20px', borderRadius:8, border:'none', background:applying?'#1a2744':'linear-gradient(135deg,#1d6aeb,#7c3aed)', color:'#fff', fontSize:13, fontWeight:700, cursor:applying?'default':'pointer', display:'flex', alignItems:'center', gap:6 }}
-        >
+        <button onClick={handleApply} disabled={applying} style={{ padding:'8px 20px', borderRadius:8, border:'none', background: applying ? '#1a2744' : 'linear-gradient(135deg,#1d6aeb,#7c3aed)', color:'#fff', fontSize:13, fontWeight:700, cursor: applying ? 'default' : 'pointer' }}>
           {applying ? '⏳ 反映中...' : '⚡ 架電リストに担当者を一括反映'}
         </button>
         <span style={{ fontSize:11, color:'#4a6490' }}>※ 🔒ロック済みの店舗は変更されません</span>
       </div>
       {applyMsg && (
-        <div style={{ marginTop:8, fontSize:12, color: applyMsg.startsWith('✅') ? '#22c55e' : '#f59e0b', padding:'6px 10px', borderRadius:6, background:'#0d1829', border:`1px solid ${applyMsg.startsWith('✅')?'#22c55e33':'#f59e0b33'}` }}>
+        <div style={{ marginTop:8, fontSize:12, color: applyMsg.startsWith('✅') ? '#22c55e' : '#f59e0b', padding:'6px 10px', borderRadius:6, background:'#0d1829', border:`1px solid ${applyMsg.startsWith('✅') ? '#22c55e33' : '#f59e0b33'}` }}>
           {applyMsg}
         </div>
       )}
     </div>
   )
 }
-
