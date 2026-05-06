@@ -728,154 +728,333 @@ function Dashboard({ allData, statCnt, members, memberColors, isMobile }) {
   )
 }
 
-// ── エリアマップコンポーネント ─────────────────────
-const PREF_GRID = [
-  [1,'北海道',8,0,'北海道'],
-  [2,'青森県',8,1,'青森'],[3,'岩手県',9,1,'岩手'],[4,'宮城県',9,2,'宮城'],
-  [5,'秋田県',8,2,'秋田'],[6,'山形県',8,3,'山形'],[7,'福島県',9,3,'福島'],
-  [8,'茨城県',9,4,'茨城'],[9,'栃木県',8,4,'栃木'],[10,'群馬県',7,4,'群馬'],
-  [11,'埼玉県',8,5,'埼玉'],[12,'千葉県',9,5,'千葉'],[13,'東京都',8,6,'東京'],
-  [14,'神奈川県',8,7,'神奈川'],[15,'新潟県',7,3,'新潟'],[16,'富山県',6,4,'富山'],
-  [17,'石川県',5,4,'石川'],[18,'福井県',5,5,'福井'],[19,'山梨県',7,6,'山梨'],
-  [20,'長野県',7,5,'長野'],[21,'岐阜県',6,5,'岐阜'],[22,'静岡県',7,7,'静岡'],
-  [23,'愛知県',6,6,'愛知'],[24,'三重県',6,7,'三重'],[25,'滋賀県',5,6,'滋賀'],
-  [26,'京都府',5,7,'京都'],[27,'大阪府',5,8,'大阪'],[28,'兵庫県',4,7,'兵庫'],
-  [29,'奈良県',5,9,'奈良'],[30,'和歌山県',5,10,'和歌山'],[31,'鳥取県',4,6,'鳥取'],
-  [32,'島根県',3,6,'島根'],[33,'岡山県',4,8,'岡山'],[34,'広島県',3,7,'広島'],
-  [35,'山口県',2,7,'山口'],[36,'徳島県',5,11,'徳島'],[37,'香川県',4,10,'香川'],
-  [38,'愛媛県',3,10,'愛媛'],[39,'高知県',4,11,'高知'],[40,'福岡県',2,8,'福岡'],
-  [41,'佐賀県',1,8,'佐賀'],[42,'長崎県',0,9,'長崎'],[43,'熊本県',2,9,'熊本'],
-  [44,'大分県',3,8,'大分'],[45,'宮崎県',3,9,'宮崎'],[46,'鹿児島県',2,10,'鹿児島'],
-  [47,'沖縄県',1,12,'沖縄'],
-]
-
-const MC = {
-  '未割当':'#334155','駒井':'#3b82f6','佐々木':'#10b981','谷畑':'#f59e0b',
-  '西尾':'#ef4444','御手洗':'#a855f7','楠本':'#06b6d4','田中':'#f97316','佐藤':'#84cc16'
+// ── エリアマップコンポーネント（D3+TopoJSON 本物の日本地図形状版）──────────
+const LABEL_SIZE = {
+  1:12, 3:8, 15:8, 20:8, 21:8, 39:8,
+  2:7, 5:7, 6:7, 7:7, 17:7, 22:7, 28:7, 32:7, 34:7, 35:7, 38:7,
+  40:7, 43:7, 44:7, 45:7, 46:7,
+  4:6.5, 8:6.5, 9:6.5, 10:6.5, 16:6.5, 18:6.5, 19:6.5, 23:6.5,
+  24:6.5, 26:6.5, 29:6.5, 30:6.5, 31:6.5, 33:6.5, 36:6.5, 41:6.5, 42:6.5, 47:6.5,
+  11:6, 12:6, 25:6, 37:6,
+  13:5.5, 14:5.5, 27:5.5,
 }
 
-function AreaMap({ members, memberColors }) {
-  const [assigns, setAssigns] = useState({})
-  const [sel, setSel] = useState('未割当')
-  const [hov, setHov] = useState(null)
-  const [loaded, setLoaded] = useState(false)
-  const gc = m => memberColors[m] || MC[m] || '#334155'
+const PREF_NAMES_MAP = {
+  1:'北海道',2:'青森',3:'岩手',4:'宮城',5:'秋田',6:'山形',7:'福島',
+  8:'茨城',9:'栃木',10:'群馬',11:'埼玉',12:'千葉',13:'東京',14:'神奈川',
+  15:'新潟',16:'富山',17:'石川',18:'福井',19:'山梨',20:'長野',
+  21:'岐阜',22:'静岡',23:'愛知',24:'三重',25:'滋賀',26:'京都',
+  27:'大阪',28:'兵庫',29:'奈良',30:'和歌山',31:'鳥取',32:'島根',
+  33:'岡山',34:'広島',35:'山口',36:'徳島',37:'香川',38:'愛媛',
+  39:'高知',40:'福岡',41:'佐賀',42:'長崎',43:'熊本',44:'大分',
+  45:'宮崎',46:'鹿児島',47:'沖縄'
+}
 
+// 都道府県名（"県"付き）→ ID変換
+const PREF_NAME_TO_ID = {}
+Object.entries(PREF_NAMES_MAP).forEach(([id, name]) => {
+  PREF_NAME_TO_ID[name] = Number(id)
+  PREF_NAME_TO_ID[name + '県'] = Number(id)
+  PREF_NAME_TO_ID[name + '都'] = Number(id)
+  PREF_NAME_TO_ID[name + '府'] = Number(id)
+  PREF_NAME_TO_ID[name + '道'] = Number(id)
+})
+
+const REGION_IDS_MAP = {
+  '北海道':[1],'東北':[2,3,4,5,6,7],'関東':[8,9,10,11,12,13,14],
+  '中部':[15,16,17,18,19,20,21,22,23],'近畿':[24,25,26,27,28,29,30],
+  '中国':[31,32,33,34,35],'四国':[36,37,38,39],
+  '九州':[40,41,42,43,44,45,46],'沖縄':[47],
+}
+const PREF_REGION_MAP = {}
+Object.entries(REGION_IDS_MAP).forEach(([r,ids])=>ids.forEach(id=>{PREF_REGION_MAP[id]=r}))
+
+const UNASSIGNED_COLOR = '#1e2d45'
+const TOPO_URL = 'https://cdn.jsdelivr.net/npm/datamaps@0.5.10/src/js/data/jpn.topo.json'
+
+function AreaMap({ members, memberColors }) {
+  const svgRef    = useRef(null)
+  const wrapRef   = useRef(null)
+  const pathsRef  = useRef(null)
+  const labelsRef = useRef(null)
+  const selRef    = useRef('未割当')
+  const asgnRef   = useRef({})
+
+  const [assigns, setAssigns] = useState({})   // { prefId: memberName }
+  const [sel, setSel]         = useState('未割当')
+  const [tooltip, setTooltip] = useState({ visible: false, prefId: null, x: 0, y: 0 })
+  const [mapLoaded, setMapLoaded] = useState(false)
+  const [mapErr, setMapErr]   = useState(false)
+  const [saving, setSaving]   = useState(false)
+
+  // refを同期
+  useEffect(() => { selRef.current = sel }, [sel])
+  useEffect(() => { asgnRef.current = assigns }, [assigns])
+
+  const gc = useCallback((memberName) => {
+    if (!memberName || memberName === '未割当') return UNASSIGNED_COLOR
+    return memberColors[memberName] || '#334155'
+  }, [memberColors])
+
+  // Supabaseから読み込み
   useEffect(() => {
     supabase.from('pref_assignments').select('pref_id,pref_name,member_name').then(({ data }) => {
       if (data) {
         const map = {}
-        data.forEach(r => { map[Number(r.pref_id)] = r.member_name || '未割当' })
+        data.forEach(r => {
+          // pref_id が入っている場合
+          if (r.pref_id) {
+            map[Number(r.pref_id)] = r.member_name || '未割当'
+          } else if (r.pref_name) {
+            // pref_name だけの場合、名前からIDを解決
+            const id = PREF_NAME_TO_ID[r.pref_name]
+            if (id) map[id] = r.member_name || '未割当'
+          }
+        })
         setAssigns(map)
       }
-      setLoaded(true)
     })
   }, [])
 
-  const handleClick = async (id, name) => {
-    setAssigns(prev => ({ ...prev, [id]: sel }))
-    await supabase.from('pref_assignments').upsert(
-      { pref_id: id, pref_name: name, member_name: sel, updated_at: new Date().toISOString() },
-      { onConflict: 'pref_id' }
-    )
-  }
+  // D3地図初期化（1回のみ）
+  useEffect(() => {
+    const d3 = window.d3, topo = window.topojson
+    if (!d3 || !topo || !svgRef.current) return
 
-  if (!loaded) return <div style={{ padding:24, textAlign:'center', color:'#3b5280' }}>読み込み中...</div>
+    const proj = d3.geoMercator().center([136.5, 38]).scale(1550).translate([370, 360])
+    const pg   = d3.geoPath(proj)
+    const svg  = d3.select(svgRef.current)
 
-  const C = 50, G = 3
-  const cols = 11, rows = 14
-  const W = cols*(C+G), H = rows*(C+G)
-  const hovPref = hov ? PREF_GRID.find(([id])=>id===hov) : null
+    fetch(TOPO_URL).then(r => r.json()).then(jp => {
+      const features = topo.feature(jp, jp.objects.jpn).features
+
+      // 都道府県パス
+      pathsRef.current = svg.selectAll('.pp')
+        .data(features).join('path')
+        .attr('class', 'pp')
+        .attr('d', pg)
+        .attr('fill', UNASSIGNED_COLOR)
+        .attr('stroke', 'rgba(255,255,255,0.15)')
+        .attr('stroke-width', '0.7')
+        .style('cursor', 'pointer')
+        .on('click', (_, d) => {
+          const currentSel = selRef.current
+          const memberName = currentSel === '未割当' ? '未割当' : currentSel
+          setAssigns(prev => {
+            const next = { ...prev }
+            if (next[d.id] === memberName) {
+              delete next[d.id]  // 同じ担当者をクリック → 解除
+            } else {
+              next[d.id] = memberName
+            }
+            // Supabase保存
+            const prefName = PREF_NAMES_MAP[d.id]
+            if (next[d.id] && next[d.id] !== '未割当') {
+              supabase.from('pref_assignments').upsert(
+                { pref_id: d.id, pref_name: prefName, member_name: next[d.id], updated_at: new Date().toISOString() },
+                { onConflict: 'pref_id' }
+              )
+            } else {
+              supabase.from('pref_assignments').delete().eq('pref_id', d.id)
+            }
+            return next
+          })
+        })
+        .on('mouseenter', (e, d) => {
+          d3.select(e.currentTarget).raise()
+            .attr('opacity', '0.75')
+            .attr('stroke', '#fff')
+            .attr('stroke-width', '1.5')
+          const rect = wrapRef.current?.getBoundingClientRect()
+          if (!rect) return
+          let x = e.clientX - rect.left + 12, y = e.clientY - rect.top - 10
+          if (x + 160 > rect.width) x -= 175
+          setTooltip({ visible: true, prefId: d.id, x, y })
+        })
+        .on('mousemove', e => {
+          const rect = wrapRef.current?.getBoundingClientRect()
+          if (!rect) return
+          let x = e.clientX - rect.left + 12, y = e.clientY - rect.top - 10
+          if (x + 160 > rect.width) x -= 175
+          setTooltip(prev => ({ ...prev, x, y }))
+        })
+        .on('mouseleave', (e, d) => {
+          const a = asgnRef.current[d.id]
+          d3.select(e.currentTarget).attr('opacity', '1')
+            .attr('stroke', a && a !== '未割当' ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.15)')
+            .attr('stroke-width', '0.7')
+          setTooltip(prev => ({ ...prev, visible: false }))
+        })
+
+      // 都道府県名ラベル（アウトライン付きで視認性UP）
+      labelsRef.current = svg.selectAll('.pl')
+        .data(features).join('text')
+        .attr('class', 'pl')
+        .attr('x', d => pg.centroid(d)[0])
+        .attr('y', d => pg.centroid(d)[1] + 1)
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'middle')
+        .attr('font-size', d => LABEL_SIZE[d.id] || 6.5)
+        .attr('font-family', "'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif")
+        .attr('fill', '#7ab3ff')
+        .attr('font-weight', '500')
+        .attr('paint-order', 'stroke')
+        .attr('stroke', 'rgba(8,14,26,0.8)')
+        .attr('stroke-width', '2.5')
+        .attr('stroke-linejoin', 'round')
+        .attr('pointer-events', 'none')
+        .text(d => PREF_NAMES_MAP[d.id] || '')
+
+      setMapLoaded(true)
+    }).catch(() => { setMapErr(true) })
+  }, [])
+
+  // assigns変化時にD3描画を更新
+  useEffect(() => {
+    if (!pathsRef.current || !labelsRef.current) return
+    pathsRef.current
+      .attr('fill', d => {
+        const m = assigns[d.id]
+        return (m && m !== '未割当') ? gc(m) : UNASSIGNED_COLOR
+      })
+      .attr('stroke', d => {
+        const m = assigns[d.id]
+        return (m && m !== '未割当') ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.15)'
+      })
+    labelsRef.current
+      .attr('fill', d => {
+        const m = assigns[d.id]
+        return (m && m !== '未割当') ? 'rgba(255,255,255,0.95)' : '#7ab3ff'
+      })
+      .attr('font-weight', d => {
+        const m = assigns[d.id]
+        return (m && m !== '未割当') ? '700' : '500'
+      })
+      .attr('stroke', d => {
+        const m = assigns[d.id]
+        return (m && m !== '未割当') ? 'rgba(0,0,0,0.4)' : 'rgba(8,14,26,0.8)'
+      })
+  }, [assigns, gc])
+
+  // 地方一括設定
+  const bulkRegion = useCallback((region) => {
+    if (sel === '未割当') return
+    const ids = REGION_IDS_MAP[region] || []
+    setAssigns(prev => {
+      const next = { ...prev }
+      ids.forEach(id => { next[id] = sel })
+      return next
+    })
+    // Supabase一括保存
+    const rows = ids.map(id => ({
+      pref_id: id,
+      pref_name: PREF_NAMES_MAP[id],
+      member_name: sel,
+      updated_at: new Date().toISOString()
+    }))
+    supabase.from('pref_assignments').upsert(rows, { onConflict: 'pref_id' })
+  }, [sel])
+
+  const clearAll = useCallback(async () => {
+    if (!window.confirm('全担当をクリアしますか？')) return
+    setAssigns({})
+    await supabase.from('pref_assignments').delete().neq('pref_id', 0)
+  }, [])
+
+  const tipAssignee = tooltip.prefId != null ? assigns[tooltip.prefId] : null
+  const memberList = ['未割当', ...members.filter(m => m !== '未割当')]
 
   return (
     <div>
-      {/* 担当者選択 */}
-      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:14, alignItems:'center' }}>
-        <span style={{ fontSize:11, color:'#4a6490', marginRight:4 }}>担当者を選んで都道府県をクリック：</span>
-        {['未割当',...members.filter(m=>m!=='未割当')].map(m => {
-          const c = gc(m), active = sel===m
-          const cnt = Object.values(assigns).filter(v=>v===m).length
+      {/* 担当者選択ボタン */}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10, alignItems:'center' }}>
+        <span style={{ fontSize:11, color:'#4a6490', marginRight:2, whiteSpace:'nowrap' }}>担当者を選択してから都道府県をクリック：</span>
+        {memberList.map(m => {
+          const c = gc(m)
+          const active = sel === m
+          const cnt = Object.values(assigns).filter(v => v === m).length
           return (
-            <button key={m} onClick={()=>setSel(m)} style={{
-              padding:'5px 12px', borderRadius:7,
-              border:`2px solid ${active?c:'#1a2744'}`,
-              background:active?c+'33':'transparent',
-              color:active?c:'#4a6490',
+            <button key={m} onClick={() => setSel(m)} style={{
+              padding:'4px 10px', borderRadius:7,
+              border:`2px solid ${active ? c : '#1a2744'}`,
+              background: active ? c + '33' : 'transparent',
+              color: active ? c : '#4a6490',
               fontSize:12, fontWeight:700, cursor:'pointer',
-              display:'flex', alignItems:'center', gap:4
+              display:'flex', alignItems:'center', gap:4,
             }}>
-              <span style={{ width:8,height:8,borderRadius:'50%',background:c,display:'inline-block' }}/>
-              {m}{cnt>0&&<span style={{ fontSize:10,opacity:0.75 }}>{cnt}</span>}
+              {m !== '未割当' && <span style={{ width:7,height:7,borderRadius:'50%',background:c,display:'inline-block',flexShrink:0 }}/>}
+              {m}
+              {cnt > 0 && <span style={{ fontSize:10, opacity:0.8 }}>{cnt}</span>}
             </button>
           )
         })}
       </div>
 
-      {/* ホバー情報 */}
-      <div style={{ minHeight:28, marginBottom:8 }}>
-        {hovPref && (() => {
-          const [id,name] = hovPref
-          const assignee = assigns[id]||'未割当'
-          const c = gc(assignee)
-          return (
-            <div style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'4px 12px', borderRadius:6, background:'#0d1829', border:`1px solid ${c}55` }}>
-              <span style={{ width:10,height:10,borderRadius:3,background:c,display:'inline-block' }}/>
-              <span style={{ fontSize:13, color:'#e8f0ff', fontWeight:700 }}>{name}</span>
-              <span style={{ fontSize:11, color:c }}>{assignee}</span>
-            </div>
-          )
-        })()}
-      </div>
+      {/* 地方一括ボタン */}
+      {sel !== '未割当' && (
+        <div style={{ display:'flex', gap:4, flexWrap:'wrap', marginBottom:8, alignItems:'center' }}>
+          <span style={{ fontSize:10, color:'#2a3d60', marginRight:2 }}>地方一括:</span>
+          {Object.keys(REGION_IDS_MAP).map(r => (
+            <button key={r} onClick={() => bulkRegion(r)} style={{
+              fontSize:10, padding:'2px 8px', borderRadius:9,
+              border:'1px solid #1a2744', background:'transparent',
+              color:'#4a6490', cursor:'pointer',
+            }}>{r}</button>
+          ))}
+          <button onClick={clearAll} style={{
+            fontSize:10, padding:'2px 8px', borderRadius:9,
+            border:'1px solid #7f1d1d', background:'transparent',
+            color:'#f87171', cursor:'pointer', marginLeft:'auto',
+          }}>全クリア</button>
+        </div>
+      )}
 
-      {/* SVGグリッドマップ */}
-      <div style={{ overflowX:'auto' }}>
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', maxWidth:600, display:'block' }}>
-          {PREF_GRID.map(([id, name, col, row, abbr]) => {
-            const assignee = assigns[id]||'未割当'
-            const c = gc(assignee)
-            const isUnassigned = assignee==='未割当'
-            const isHov = hov===id
-            const x = col*(C+G), y = row*(C+G)
-            return (
-              <g key={id}
-                onClick={()=>handleClick(id,name)}
-                onMouseEnter={()=>setHov(id)}
-                onMouseLeave={()=>setHov(null)}
-                style={{ cursor:'pointer' }}>
-                <rect x={x} y={y} width={C} height={C} rx={7}
-                  fill={isUnassigned?'#1a2744':c+'44'}
-                  stroke={isHov?gc(sel):isUnassigned?'#2a3d60':c}
-                  strokeWidth={isHov?2.5:1.5}
-                />
-                <text x={x+C/2} y={y+C*(abbr.length>3?0.38:0.42)}
-                  textAnchor="middle" dominantBaseline="middle"
-                  fontSize={abbr.length>4?8:abbr.length>3?9:11}
-                  fontFamily="'Noto Sans JP',sans-serif" fontWeight="700"
-                  fill={isUnassigned?'#4a6490':c}>
-                  {abbr}
-                </text>
-                {!isUnassigned && (
-                  <text x={x+C/2} y={y+C*0.73}
-                    textAnchor="middle"
-                    fontSize={7} fontFamily="'Noto Sans JP',sans-serif"
-                    fill={c} opacity={0.85}>
-                    {assignee.length>3?assignee.slice(0,3):assignee}
-                  </text>
-                )}
-              </g>
-            )
-          })}
-        </svg>
+      {/* SVG地図 */}
+      <div ref={wrapRef} style={{ position:'relative', width:'100%', background:'#080e1a', borderRadius:8, overflow:'hidden', border:'1px solid #1a2744' }}>
+        {!mapLoaded && !mapErr && (
+          <div style={{ padding:'40px', textAlign:'center', color:'#3b5280', fontSize:13 }}>地図を読み込み中...</div>
+        )}
+        {mapErr && (
+          <div style={{ padding:'40px', textAlign:'center', color:'#3b5280', fontSize:13 }}>地図データの読み込みに失敗しました</div>
+        )}
+        <svg ref={svgRef} viewBox="0 0 800 700" style={{ width:'100%', display:'block' }} />
+
+        {/* ツールチップ */}
+        {tooltip.visible && tooltip.prefId != null && (
+          <div style={{
+            position:'absolute', left:tooltip.x, top:tooltip.y,
+            background:'#0d1829', border:`1px solid ${gc(tipAssignee)}55`,
+            borderRadius:8, padding:'6px 10px',
+            pointerEvents:'none', zIndex:50, fontSize:12, whiteSpace:'nowrap',
+          }}>
+            <div style={{ fontWeight:700, color:'#e8f0ff', marginBottom:3 }}>
+              {PREF_NAMES_MAP[tooltip.prefId]}
+              <span style={{ fontSize:10, color:'#3b5280', marginLeft:5 }}>
+                {PREF_REGION_MAP[tooltip.prefId]}
+              </span>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11 }}>
+              {tipAssignee && tipAssignee !== '未割当' ? (
+                <>
+                  <span style={{ width:7,height:7,borderRadius:'50%',background:gc(tipAssignee),display:'inline-block' }}/>
+                  <span style={{ color:gc(tipAssignee), fontWeight:700 }}>{tipAssignee}</span>
+                </>
+              ) : (
+                <span style={{ color:'#3b5280' }}>未割当</span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 凡例 */}
-      <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginTop:14, padding:'10px 14px', borderRadius:8, background:'#080e1a', border:'1px solid #1a2744' }}>
-        {members.filter(m=>m!=='未割当').map(m => {
-          const cnt = Object.values(assigns).filter(v=>v===m).length
+      <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginTop:10, padding:'8px 12px', borderRadius:8, background:'#080e1a', border:'1px solid #1a2744' }}>
+        {members.filter(m => m !== '未割当').map(m => {
+          const cnt = Object.values(assigns).filter(v => v === m).length
           const c = gc(m)
           return (
             <div key={m} style={{ display:'flex', alignItems:'center', gap:5 }}>
-              <span style={{ width:12,height:12,borderRadius:3,background:c,display:'inline-block',flexShrink:0 }}/>
+              <span style={{ width:10,height:10,borderRadius:3,background:c,display:'inline-block',flexShrink:0 }}/>
               <span style={{ fontSize:11, color:'#94a3b8' }}>{m}</span>
               <span style={{ fontSize:11, color:c, fontWeight:700 }}>{cnt}県</span>
             </div>
@@ -885,4 +1064,3 @@ function AreaMap({ members, memberColors }) {
     </div>
   )
 }
- 
