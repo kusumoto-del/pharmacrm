@@ -922,3 +922,4 @@ function AreaMap({ members, memberColors, applyAreaAssign, allData, areaAssigns,
     </div>
   )
 }
+
