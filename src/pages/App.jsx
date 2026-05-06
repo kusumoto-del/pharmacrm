@@ -60,7 +60,8 @@ export default function App({ user }) {
   const [bulkAssignee,setBulkAssignee] = useState('')
   const [bulkStatus,  setBulkStatus]   = useState('')
   const [bulkLock,    setBulkLock]     = useState('')
-  const saveTimer = useRef(null)
+  const [bulkLock,    setBulkLock]     = useState('')
+  const [areaAssigns, setAreaAssigns] = useState({})
 
   useEffect(() => {
     supabase.from('members').select('name,color').order('id').then(({ data }) => {
@@ -278,7 +279,7 @@ export default function App({ user }) {
       </header>
 
       {tab === 'dashboard' ? (
-        <Dashboard allData={allData} statCnt={statCnt} members={members} memberColors={memberColors} isMobile={isMobile} applyAreaAssign={applyAreaAssign}/>
+        <Dashboard allData={allData} statCnt={statCnt} members={members} memberColors={memberColors} isMobile={isMobile} applyAreaAssign={applyAreaAssign} areaAssigns={areaAssigns} setAreaAssigns={setAreaAssigns}/>
       ) : (
         <ListPanel
           paged={paged} filtered={filtered} statCnt={statCnt} allData={allData}
@@ -560,7 +561,7 @@ function DetailView({ p, c, eMemo, setEMemo, eNext, setENext, setStatus, setAssi
   )
 }
 
-function Dashboard({ allData, statCnt, members, memberColors, isMobile, applyAreaAssign }) {
+function Dashboard({ allData, statCnt, members, memberColors, isMobile, applyAreaAssign, areaAssigns, setAreaAssigns }) {
   const total = allData.length
   const memberStats = useMemo(() => {
     const r = {}
@@ -649,7 +650,7 @@ function Dashboard({ allData, statCnt, members, memberColors, isMobile, applyAre
       <div style={{ borderRadius:10, background:'#0b1221', border:'1px solid #1a2744', overflow:'hidden' }}>
         <div style={{ padding:'10px 14px', borderBottom:'1px solid #1a2744', fontSize:12, fontWeight:800, color:'#7ab3ff' }}>🗾 エリア担当マップ</div>
         <div style={{ padding:14 }}>
-          <AreaMap members={members} memberColors={memberColors} applyAreaAssign={applyAreaAssign} allData={allData}/>
+          <AreaMap members={members} memberColors={memberColors} applyAreaAssign={applyAreaAssign} allData={allData} areaAssigns={areaAssigns} setAreaAssigns={setAreaAssigns}/>
         </div>
       </div>
 
@@ -689,10 +690,12 @@ Object.entries(REGION_IDS_MAP).forEach(([r,ids])=>ids.forEach(id=>{PREF_REGION_M
 const UNASSIGNED_COLOR = '#1e2d45'
 const TOPO_URL = 'https://cdn.jsdelivr.net/npm/datamaps@0.5.10/src/js/data/jpn.topo.json'
 
-function AreaMap({ members, memberColors, applyAreaAssign, allData }) {
+function AreaMap({ members, memberColors, applyAreaAssign, allData, areaAssigns, setAreaAssigns }) {
   const svgRef=useRef(null), wrapRef=useRef(null), pathsRef=useRef(null), labelsRef=useRef(null)
   const selRef=useRef('未割当'), asgnRef=useRef({})
-  const [assigns, setAssigns] = useState({})
+  // assigns は App から props で受け取る（タブ切り替えで保持）
+  const assigns = areaAssigns
+  const setAssigns = setAreaAssigns
   const [sel, setSel]         = useState('未割当')
   const [tooltip, setTooltip] = useState({ visible:false, prefId:null, x:0, y:0 })
   const [mapLoaded, setMapLoaded] = useState(false)
@@ -719,7 +722,7 @@ function AreaMap({ members, memberColors, applyAreaAssign, allData }) {
     return r
   }, [allData])
 
-  useEffect(() => {
+  useEffect(() => { // 初回のみ読み込み（既にデータあれば再読み込みしない）
     supabase.from('pref_assignments').select('pref_id,pref_name,member_name').then(({ data }) => {
       if (data) {
         const map = {}
@@ -730,7 +733,8 @@ function AreaMap({ members, memberColors, applyAreaAssign, allData }) {
         setAssigns(map)
       }
     })
-  }, [])
+  // eslint-disable-next-line
+  }, [])  // mountedときのみ
 
   useEffect(() => {
     const d3=window.d3, topo=window.topojson
