@@ -39,14 +39,15 @@ const PREF_REGION = {}
 Object.entries(REGION_PREFS).forEach(([r,ps]) => ps.forEach(p => { PREF_REGION[p] = r }))
 
 const LABEL_SIZE_BY_PREF = {
-  '北海道':12,'岩手県':8,'新潟県':8,'長野県':8,'岐阜県':8,'高知県':8,
-  '青森県':7,'秋田県':7,'山形県':7,'福島県':7,'石川県':7,'静岡県':7,'兵庫県':7,
-  '島根県':7,'広島県':7,'山口県':7,'愛媛県':7,'福岡県':7,'熊本県':7,'大分県':7,
-  '宮崎県':7,'鹿児島県':7,'宮城県':6.5,'茨城県':6.5,'栃木県':6.5,'群馬県':6.5,
-  '富山県':6.5,'福井県':6.5,'山梨県':6.5,'愛知県':6.5,'三重県':6.5,'京都府':6.5,
-  '奈良県':6.5,'和歌山県':6.5,'鳥取県':6.5,'岡山県':6.5,'徳島県':6.5,'佐賀県':6.5,
-  '長崎県':6.5,'沖縄県':6.5,'埼玉県':6,'千葉県':6,'滋賀県':6,'香川県':6,
-  '東京都':5.5,'神奈川県':5.5,'大阪府':5.5,
+  '北海道':13,'岩手県':9,'新潟県':8.5,'長野県':8.5,'岐阜県':8.5,'高知県':8.5,
+  '青森県':7.5,'秋田県':7.5,'山形県':7.5,'福島県':7.5,'石川県':7.5,'静岡県':7.5,
+  '兵庫県':7.5,'島根県':7.5,'広島県':7.5,'山口県':7.5,'愛媛県':7.5,'福岡県':7.5,
+  '熊本県':7.5,'大分県':7.5,'宮崎県':7.5,'鹿児島県':7,
+  '宮城県':7,'茨城県':7,'栃木県':7,'群馬県':7,'富山県':7,'福井県':7,
+  '山梨県':7,'愛知県':7,'三重県':7,'京都府':7,'奈良県':7,'和歌山県':6.5,
+  '鳥取県':7,'岡山県':7,'徳島県':7,'佐賀県':7,'長崎県':7,'沖縄県':7,
+  '埼玉県':6.5,'千葉県':6.5,'滋賀県':6.5,'香川県':6.5,
+  '東京都':6,'神奈川県':5.5,'大阪府':6,
 }
 
 const UNASSIGNED_COLOR = '#1e2d45'
@@ -124,8 +125,8 @@ export default function App({ user }) {
     })
   }, [])
 
-  // エリア割り当てをSupabaseから読み込み（pref_nameをキーとして使用）
-  useEffect(() => {
+  // エリア割り当てをSupabaseから読み込み
+  const loadAreaAssigns = useCallback(() => {
     supabase.from('pref_assignments').select('pref_name,member_name').then(({ data }) => {
       if (data) {
         const map = {}
@@ -134,11 +135,14 @@ export default function App({ user }) {
             map[r.pref_name] = r.member_name
           }
         })
-        console.log('Loaded area assigns:', map)
         setAreaAssigns(map)
       }
     })
   }, [])
+  useEffect(() => { loadAreaAssigns() }, [])
+  // ダッシュボードタブに切り替えた時に再読み込み（塗りつぶし保持）
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (tab === 'dashboard') loadAreaAssigns() }, [tab])
 
   useEffect(() => {
     let cancelled = false
@@ -227,11 +231,12 @@ export default function App({ user }) {
     updateLocal(id, { locked }); syncDB(id, { locked })
   }, [updateLocal, syncDB])
 
-  const saveMemo = useCallback(() => {
+  const saveMemo = useCallback(async () => {
     if (!sel) return
     updateLocal(sel, { memo: eMemo, next_action: eNext })
     clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => syncDB(sel, { memo: eMemo, next_action: eNext }), 500)
+    // 即時保存（他端末との同期のため）
+    await syncDB(sel, { memo: eMemo, next_action: eNext })
   }, [sel, eMemo, eNext, updateLocal, syncDB])
 
   // ── 都道府県名で架電リストを一括更新（ロック除外）──
