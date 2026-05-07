@@ -850,31 +850,31 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
           setTooltip(prev => ({ ...prev, visible: false }))
         })
 
-      // 一部の県はcentroidが県外に出るため手動で座標を固定
-      const LABEL_FIXED = {
-        '北海道':   [535, 130],
-        '東京都':   [875, 472],
-        '千葉県':   [895, 445],
-        '愛知県':   [745, 490],
-        '滋賀県':   [683, 483],
-        '京都府':   [656, 470],
-        '岡山県':   [570, 510],
-        '福岡県':   [390, 548],
-        '佐賀県':   [358, 568],
-        '長崎県':   [318, 572],
-        '神奈川県': [858, 480],
+      // centroidが県外に出る県のオフセット調整（fitSize後の相対移動）
+      const LABEL_OFFSET = {
+        '山形県':   [0, 8],
+        '東京都':   [22, 0],
+        '千葉県':   [18, 6],
+        '愛知県':   [0, 8],
+        '滋賀県':   [6, 0],
+        '京都府':   [-2, -10],
+        '岡山県':   [0, 6],
+        '福岡県':   [-8, 0],
+        '佐賀県':   [-10, 8],
+        '長崎県':   [-16, 10],
+        '神奈川県': [12, 2],
       }
       labelsRef.current = labelLayer.selectAll('.pl').data(features).join('text')
         .attr('class', 'pl')
         .attr('x', d => {
           const pref = TOPO_ID_TO_PREF[d.id]
-          const fixed = LABEL_FIXED[pref]
-          return fixed ? fixed[0] : pg.centroid(d)[0]
+          const off = LABEL_OFFSET[pref]
+          return pg.centroid(d)[0] + (off ? off[0] : 0)
         })
         .attr('y', d => {
           const pref = TOPO_ID_TO_PREF[d.id]
-          const fixed = LABEL_FIXED[pref]
-          return fixed ? fixed[1] : pg.centroid(d)[1] + 1
+          const off = LABEL_OFFSET[pref]
+          return pg.centroid(d)[1] + 1 + (off ? off[1] : 0)
         })
         .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
         .attr('font-size', d => LABEL_SIZE_BY_PREF[TOPO_ID_TO_PREF[d.id]] || 6.5)
