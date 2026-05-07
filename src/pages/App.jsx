@@ -765,12 +765,15 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
     if (!d3 || !topo || !svgRef.current) return
     initRef.current = true
 
-    const proj = d3.geoMercator().center([137, 37.5]).scale(1700).translate([430, 390])
+    const proj = d3.geoMercator()
     const pg   = d3.geoPath(proj)
     const svg  = d3.select(svgRef.current)
 
     fetch(TOPO_URL).then(r => r.json()).then(jp => {
       const features = topo.feature(jp, jp.objects.jpn).features
+
+      // fitSizeで日本全体が900x780に収まるよう自動調整
+      proj.fitSize([900, 780], topo.feature(jp, jp.objects.jpn))
 
       // パス用レイヤーとラベル用レイヤーを分けて、ラベルを常に最前面に
       const pathLayer  = svg.append('g').attr('class', 'path-layer')
@@ -847,35 +850,31 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
           setTooltip(prev => ({ ...prev, visible: false }))
         })
 
-      // 一部の県はcentroidが県外に出るため手動オフセット
-      const LABEL_OFFSET = {
-        '秋田県':   [0, 0],
-        '東京都':   [18, -8],
-        '千葉県':   [14, 8],
-        '愛知県':   [0, 6],
-        '滋賀県':   [4, -4],
-        '京都府':   [-4, -8],
-        '岡山県':   [0, 4],
-        '福岡県':   [-6, 0],
-        '佐賀県':   [-8, 6],
-        '長崎県':   [-14, 8],
-        '神奈川県': [10, 4],
-        '大阪府':   [0, 4],
-        '奈良県':   [4, 4],
-        '香川県':   [0, -3],
-        '徳島県':   [6, 0],
+      // 一部の県はcentroidが県外に出るため手動で座標を固定
+      const LABEL_FIXED = {
+        '北海道':   [535, 130],
+        '東京都':   [875, 472],
+        '千葉県':   [895, 445],
+        '愛知県':   [745, 490],
+        '滋賀県':   [683, 483],
+        '京都府':   [656, 470],
+        '岡山県':   [570, 510],
+        '福岡県':   [390, 548],
+        '佐賀県':   [358, 568],
+        '長崎県':   [318, 572],
+        '神奈川県': [858, 480],
       }
       labelsRef.current = labelLayer.selectAll('.pl').data(features).join('text')
         .attr('class', 'pl')
         .attr('x', d => {
           const pref = TOPO_ID_TO_PREF[d.id]
-          const off = LABEL_OFFSET[pref]
-          return pg.centroid(d)[0] + (off ? off[0] : 0)
+          const fixed = LABEL_FIXED[pref]
+          return fixed ? fixed[0] : pg.centroid(d)[0]
         })
         .attr('y', d => {
           const pref = TOPO_ID_TO_PREF[d.id]
-          const off = LABEL_OFFSET[pref]
-          return pg.centroid(d)[1] + 1 + (off ? off[1] : 0)
+          const fixed = LABEL_FIXED[pref]
+          return fixed ? fixed[1] : pg.centroid(d)[1] + 1
         })
         .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
         .attr('font-size', d => LABEL_SIZE_BY_PREF[TOPO_ID_TO_PREF[d.id]] || 6.5)
