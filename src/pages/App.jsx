@@ -847,9 +847,36 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
           setTooltip(prev => ({ ...prev, visible: false }))
         })
 
+      // 一部の県はcentroidが県外に出るため手動オフセット
+      const LABEL_OFFSET = {
+        '秋田県':   [0, 0],
+        '東京都':   [18, -8],
+        '千葉県':   [14, 8],
+        '愛知県':   [0, 6],
+        '滋賀県':   [4, -4],
+        '京都府':   [-4, -8],
+        '岡山県':   [0, 4],
+        '福岡県':   [-6, 0],
+        '佐賀県':   [-8, 6],
+        '長崎県':   [-14, 8],
+        '神奈川県': [10, 4],
+        '大阪府':   [0, 4],
+        '奈良県':   [4, 4],
+        '香川県':   [0, -3],
+        '徳島県':   [6, 0],
+      }
       labelsRef.current = labelLayer.selectAll('.pl').data(features).join('text')
         .attr('class', 'pl')
-        .attr('x', d => pg.centroid(d)[0]).attr('y', d => pg.centroid(d)[1] + 1)
+        .attr('x', d => {
+          const pref = TOPO_ID_TO_PREF[d.id]
+          const off = LABEL_OFFSET[pref]
+          return pg.centroid(d)[0] + (off ? off[0] : 0)
+        })
+        .attr('y', d => {
+          const pref = TOPO_ID_TO_PREF[d.id]
+          const off = LABEL_OFFSET[pref]
+          return pg.centroid(d)[1] + 1 + (off ? off[1] : 0)
+        })
         .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
         .attr('font-size', d => LABEL_SIZE_BY_PREF[TOPO_ID_TO_PREF[d.id]] || 6.5)
         .attr('font-family', "'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif")
