@@ -765,14 +765,18 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
     if (!d3 || !topo || !svgRef.current) return
     initRef.current = true
 
-    const proj = d3.geoMercator().center([136.5, 38]).scale(1550).translate([370, 360])
+    const proj = d3.geoMercator().center([137, 37.5]).scale(1700).translate([430, 390])
     const pg   = d3.geoPath(proj)
     const svg  = d3.select(svgRef.current)
 
     fetch(TOPO_URL).then(r => r.json()).then(jp => {
       const features = topo.feature(jp, jp.objects.jpn).features
 
-      pathsRef.current = svg.selectAll('.pp').data(features).join('path')
+      // パス用レイヤーとラベル用レイヤーを分けて、ラベルを常に最前面に
+      const pathLayer  = svg.append('g').attr('class', 'path-layer')
+      const labelLayer = svg.append('g').attr('class', 'label-layer')
+
+      pathsRef.current = pathLayer.selectAll('.pp').data(features).join('path')
         .attr('class', 'pp').attr('d', pg)
         .attr('fill', UNASSIGNED_COLOR)
         .attr('stroke', 'rgba(255,255,255,0.15)').attr('stroke-width', '0.7')
@@ -843,7 +847,7 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
           setTooltip(prev => ({ ...prev, visible: false }))
         })
 
-      labelsRef.current = svg.selectAll('.pl').data(features).join('text')
+      labelsRef.current = labelLayer.selectAll('.pl').data(features).join('text')
         .attr('class', 'pl')
         .attr('x', d => pg.centroid(d)[0]).attr('y', d => pg.centroid(d)[1] + 1)
         .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
@@ -943,7 +947,7 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
       <div ref={wrapRef} style={{ position:'relative', width:'100%', background:'#080e1a', borderRadius:8, overflow:'hidden', border:'1px solid #1a2744' }}>
         {!mapLoaded && !mapErr && <div style={{ padding:'40px', textAlign:'center', color:'#3b5280', fontSize:13 }}>地図を読み込み中...</div>}
         {mapErr && <div style={{ padding:'40px', textAlign:'center', color:'#ef4444', fontSize:13 }}>地図データの読み込みに失敗しました</div>}
-        <svg ref={svgRef} viewBox="0 0 800 700" style={{ width:'100%', display:'block' }}/>
+        <svg ref={svgRef} viewBox="0 0 900 780" style={{ width:'100%', display:'block' }}/>
         {tooltip.visible && tooltip.prefName && (
           <div style={{ position:'absolute', left:tooltip.x, top:tooltip.y, background:'#0d1829', border:'1px solid #2a3d60', borderRadius:8, padding:'6px 10px', pointerEvents:'none', zIndex:50, fontSize:12, whiteSpace:'nowrap' }}>
             <div style={{ fontWeight:700, color:'#e8f0ff', marginBottom:3 }}>
