@@ -847,38 +847,37 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
           setTooltip(prev => ({ ...prev, visible: false }))
         })
 
-      // centroidが外れる県は固定座標で表示（コンソール実測値ベース）
-      const LABEL_FIXED_POS = {
-        '山形県':   [517, 366],   // 空白8の実測値そのまま
-        '千葉県':   [520, 465],   // 空白7の実測値
-        '東京都':   [522, 479],   // 実測値より少し下
-        '愛知県':   [439, 481],   // 空白4の実測値
-        '京都府':   [391, 474],   // 空白5の実測値
-        '滋賀県':   [410, 472],   // 空白6の実測値
-        '岡山県':   [336, 503],   // 空白1の実測値
-        '福岡県':   [262, 530],   // 空白3の実測値
-        '佐賀県':   [239, 546],   // 実測値（長崎の左）
+      // 各都道府県の代表点（県庁所在地近辺）の緯度経度 → SVG座標に変換
+      const PREF_LONLAT = {
+        '北海道':[141.35,43.06],'青森県':[140.74,40.82],'岩手県':[141.15,39.70],
+        '宮城県':[140.87,38.27],'秋田県':[140.10,39.72],'山形県':[140.36,38.24],
+        '福島県':[140.47,37.75],'茨城県':[140.45,36.34],'栃木県':[139.88,36.57],
+        '群馬県':[139.06,36.39],'埼玉県':[139.65,35.86],'千葉県':[140.35,35.60],
+        '東京都':[139.69,35.69],'神奈川県':[139.64,35.45],'新潟県':[139.02,37.90],
+        '富山県':[137.21,36.70],'石川県':[136.63,36.59],'福井県':[136.22,36.07],
+        '山梨県':[138.57,35.66],'長野県':[138.18,36.65],'岐阜県':[136.72,35.39],
+        '静岡県':[138.38,34.98],'愛知県':[136.91,35.18],'三重県':[136.51,34.73],
+        '滋賀県':[136.22,35.00],'京都府':[135.77,35.02],'大阪府':[135.52,34.69],
+        '兵庫県':[135.18,34.69],'奈良県':[135.83,34.69],'和歌山県':[135.17,34.23],
+        '鳥取県':[134.24,35.50],'島根県':[132.55,35.47],'岡山県':[133.93,34.66],
+        '広島県':[132.46,34.40],'山口県':[131.47,34.19],'徳島県':[134.56,34.07],
+        '香川県':[134.04,34.34],'愛媛県':[132.77,33.84],'高知県':[133.53,33.56],
+        '福岡県':[130.42,33.61],'佐賀県':[130.30,33.25],'長崎県':[129.87,32.74],
+        '熊本県':[130.74,32.79],'大分県':[131.61,33.24],'宮崎県':[131.42,31.91],
+        '鹿児島県':[130.56,31.56],'沖縄県':[127.68,26.21],
       }
-      labelsRef.current = labelLayer.selectAll('.pl').data(features).join('text')
+      labelsRef.current = labelLayer.selectAll('.pl').data(Object.entries(PREF_LONLAT)).join('text')
         .attr('class', 'pl')
-        .attr('x', d => {
-          const pref = TOPO_ID_TO_PREF[d.id]
-          const fixed = LABEL_FIXED_POS[pref]
-          return fixed ? fixed[0] : pg.centroid(d)[0]
-        })
-        .attr('y', d => {
-          const pref = TOPO_ID_TO_PREF[d.id]
-          const fixed = LABEL_FIXED_POS[pref]
-          return fixed ? fixed[1] : pg.centroid(d)[1] + 1
-        })
+        .attr('x', d => proj(d[1])[0])
+        .attr('y', d => proj(d[1])[1])
         .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
-        .attr('font-size', d => LABEL_SIZE_BY_PREF[TOPO_ID_TO_PREF[d.id]] || 6.5)
+        .attr('font-size', d => LABEL_SIZE_BY_PREF[d[0]] || 6.5)
         .attr('font-family', "'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif")
         .attr('fill', '#7ab3ff').attr('font-weight', '500')
         .attr('paint-order', 'stroke').attr('stroke', 'rgba(8,14,26,0.8)')
         .attr('stroke-width', '2.5').attr('stroke-linejoin', 'round')
         .attr('pointer-events', 'none')
-        .text(d => TOPO_ID_TO_PREF[d.id] || '')
+        .text(d => d[0])
 
       setMapLoaded(true)
     }).catch(e => { console.error('map load error:', e); setMapErr(true) })
@@ -898,16 +897,16 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
       })
     labelsRef.current
       .attr('fill', d => {
-        const pref = TOPO_ID_TO_PREF[d.id]
-        return (pref && areaAssigns[pref]) ? 'rgba(255,255,255,0.95)' : '#7ab3ff'
+        const pref = d[0]
+        return areaAssigns[pref] ? 'rgba(255,255,255,0.95)' : '#7ab3ff'
       })
       .attr('font-weight', d => {
-        const pref = TOPO_ID_TO_PREF[d.id]
-        return (pref && areaAssigns[pref]) ? '700' : '500'
+        const pref = d[0]
+        return areaAssigns[pref] ? '700' : '500'
       })
       .attr('stroke', d => {
-        const pref = TOPO_ID_TO_PREF[d.id]
-        return (pref && areaAssigns[pref]) ? 'rgba(0,0,0,0.4)' : 'rgba(8,14,26,0.8)'
+        const pref = d[0]
+        return areaAssigns[pref] ? 'rgba(0,0,0,0.4)' : 'rgba(8,14,26,0.8)'
       })
   }, [areaAssigns, memberColors])
 
