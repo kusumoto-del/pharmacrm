@@ -861,8 +861,8 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
         '群馬県':[138.90,36.50],
         '埼玉県':[139.30,36.00],
         '千葉県':[140.40,35.45],
-        '東京都':[139.45,35.75],
-        '神奈川県':[139.30,35.35],
+        '東京都':[139.60,35.68],
+        '神奈川県':[139.15,35.38],
         '新潟県':[138.80,37.75],
         '富山県':[137.20,36.80],
         '石川県':[136.55,36.60],
@@ -872,17 +872,17 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
         '岐阜県':[136.90,35.75],
         '静岡県':[138.20,34.85],
         '愛知県':[137.10,35.00],
-        '三重県':[136.40,34.40],
+        '三重県':[136.20,34.25],
         '滋賀県':[136.05,35.10],
-        '京都府':[135.55,35.30],
-        '大阪府':[135.35,34.60],
-        '兵庫県':[134.80,34.85],
-        '奈良県':[135.85,34.45],
-        '和歌山県':[135.45,33.95],
-        '鳥取県':[134.20,35.55],
-        '島根県':[132.40,35.45],
-        '岡山県':[133.80,34.60],
-        '広島県':[132.40,34.35],
+        '京都府':[135.45,35.45],
+        '大阪府':[135.25,34.55],
+        '兵庫県':[134.55,34.90],
+        '奈良県':[135.85,34.32],
+        '和歌山県':[135.20,33.88],
+        '鳥取県':[133.90,35.50],
+        '島根県':[132.10,35.45],
+        '岡山県':[133.70,34.65],
+        '広島県':[132.20,34.38],
         '山口県':[131.50,34.15],
         '徳島県':[134.45,33.85],
         '香川県':[133.90,34.20],
@@ -902,11 +902,11 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
         .attr('x', d => proj(d[1])[0])
         .attr('y', d => proj(d[1])[1])
         .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
-        .attr('font-size', 8)
+        .attr('font-size', 6.5)
         .attr('font-family', "'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif")
-        .attr('fill', '#7ab3ff').attr('font-weight', '500')
-        .attr('paint-order', 'stroke').attr('stroke', 'rgba(8,14,26,0.8)')
-        .attr('stroke-width', '2.5').attr('stroke-linejoin', 'round')
+        .attr('fill', '#5a8abf').attr('font-weight', '400')
+        .attr('paint-order', 'stroke').attr('stroke', 'rgba(8,14,26,0.6)')
+        .attr('stroke-width', '2').attr('stroke-linejoin', 'round')
         .attr('pointer-events', 'none')
         .text(d => d[0])
 
