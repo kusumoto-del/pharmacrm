@@ -847,20 +847,17 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
           setTooltip(prev => ({ ...prev, visible: false }))
         })
 
-      // centroidが外れる県は固定座標で表示
-      // 座標はコンソールログ実測値から算出
+      // centroidが外れる県は固定座標で表示（コンソール実測値ベース）
       const LABEL_FIXED_POS = {
-        '山形県':   [494, 370],
-        '千葉県':   [535, 462],
-        '東京都':   [522, 474],
-        '神奈川県': [516, 476],
-        '愛知県':   [445, 488],
-        '滋賀県':   [406, 472],
-        '京都府':   [388, 468],
-        '岡山県':   [358, 498],
-        '福岡県':   [238, 532],
-        '佐賀県':   [222, 544],
-        '長崎県':   [205, 555],
+        '山形県':   [517, 366],   // 空白8の実測値そのまま
+        '千葉県':   [520, 465],   // 空白7の実測値
+        '東京都':   [522, 479],   // 実測値より少し下
+        '愛知県':   [439, 481],   // 空白4の実測値
+        '京都府':   [391, 474],   // 空白5の実測値
+        '滋賀県':   [410, 472],   // 空白6の実測値
+        '岡山県':   [336, 503],   // 空白1の実測値
+        '福岡県':   [262, 530],   // 空白3の実測値
+        '佐賀県':   [239, 546],   // 実測値（長崎の左）
       }
       labelsRef.current = labelLayer.selectAll('.pl').data(features).join('text')
         .attr('class', 'pl')
@@ -1026,4 +1023,3 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
     </div>
   )
 }
-
