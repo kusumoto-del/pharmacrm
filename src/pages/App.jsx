@@ -409,7 +409,7 @@ export default function App({ user }) {
             絞り込み結果 <span style={{ color:'#f59e0b', fontWeight:800 }}>{filtered.filter(r=>!r.c.locked).length.toLocaleString()}件</span>（ロック除外）に適用
           </div>
           {[
-            { label:'担当者を一括設定', val:bulkAssignee, set:setBulkAssignee, opts:members.filter(m=>m!=='未割当').map(m=>({v:m,l:m,color:'#1d6aeb'})) },
+            { label:'担当者を一括設定', val:bulkAssignee, set:setBulkAssignee, opts:[{v:'未割当',l:'🚫 未割当（外す）',color:'#64748b'},...members.filter(m=>m!=='未割当').map(m=>({v:m,l:m,color:'#1d6aeb'}))] },
             { label:'ステータスを一括設定', val:bulkStatus, set:setBulkStatus, opts:Object.entries(STATUSES).map(([s,c])=>({v:s,l:`${STATUS_ICONS[s]} ${s}`,color:c.color,bg:c.bg,bright:c.bright})) },
             { label:'🔒 ロックを一括設定', val:bulkLock, set:setBulkLock, opts:[{v:'lock',l:'🔒 一括ロック',color:'#f59e0b'},{v:'unlock',l:'🔓 一括解除',color:'#94a3b8'}] },
           ].map(({ label, val, set, opts }) => (
