@@ -158,7 +158,7 @@ export default function App({ user }) {
       }
       for (let from = 0; from < 100000; from += BATCH) {
         if (cancelled) return
-        const { data } = await supabase.from('call_records').select('pharmacy_id,status,assignee,memo,next_action,last_call,locked').range(from, from + BATCH - 1)
+        const { data } = await supabase.from('call_records').select('pharmacy_id,status,division,assignee,memo,next_action,last_call,locked').range(from, from + BATCH - 1)
         if (!data?.length) break
         crAll = [...crAll, ...data]
         setLoadPct(50 + Math.min(50, Math.round(crAll.length / 600)))
@@ -167,7 +167,7 @@ export default function App({ user }) {
       if (cancelled) return
       const crMap = {}
       crAll.forEach(r => { crMap[r.pharmacy_id] = r })
-      const merged = phAll.map(p => ({ p, c: crMap[p.id] || { pharmacy_id: p.id, status: '未着手', assignee: '未割当', memo: '', next_action: '', last_call: null, locked: false } }))
+      const merged = phAll.map(p => ({ p, c: crMap[p.id] || { pharmacy_id: p.id, status: '未着手', division: '', assignee: '未割当', memo: '', next_action: '', last_call: null, locked: false } }))
       setAllData(merged)
       setLoadPct(100)
       setReady(true)
@@ -212,6 +212,7 @@ export default function App({ user }) {
     const record = {
       pharmacy_id: id,
       status:      patch.status      ?? ex.status      ?? '未着手',
+      division:    patch.division    ?? ex.division    ?? '',
       assignee:    patch.assignee    ?? ex.assignee    ?? '未割当',
       memo:        patch.memo        ?? ex.memo        ?? '',
       next_action: patch.next_action ?? ex.next_action ?? '',
@@ -233,6 +234,11 @@ export default function App({ user }) {
   const setAssignee = useCallback((id, assignee) => {
     updateLocal(id, { assignee })
     syncDB(id, { assignee })
+  }, [updateLocal, syncDB])
+
+  const setDivision = useCallback((id, division) => {
+    updateLocal(id, { division })
+    syncDB(id, { division })
   }, [updateLocal, syncDB])
 
   const toggleLock = useCallback((id) => {
@@ -259,7 +265,7 @@ export default function App({ user }) {
     const BATCH = 500
     for (let i = 0; i < targets.length; i += BATCH) {
       const batch = targets.slice(i, i + BATCH).map(({ p, c }) => ({
-        pharmacy_id: p.id, status: c.status||'未着手', assignee: memberName,
+        pharmacy_id: p.id, status: c.status||'未着手', division: c.division||'', assignee: memberName,
         locked: false, memo: c.memo||'', next_action: c.next_action||'',
         last_call: c.last_call||null,
       }))
@@ -390,7 +396,7 @@ export default function App({ user }) {
           fRxMin={fRxMin} setFRxMin={setFRxMin} cities={cities} members={members}
           sel={sel} setSel={setSel} selP={selP} selC={selC}
           eMemo={eMemo} setEMemo={setEMemo} eNext={eNext} setENext={setENext}
-          setStatus={setStatus} setAssignee={setAssignee} saveMemo={saveMemo} toggleLock={toggleLock}
+          setStatus={setStatus} setAssignee={setAssignee} setDivision={setDivision} saveMemo={saveMemo} toggleLock={toggleLock}
           showAdv={showAdv} setShowAdv={setShowAdv} isMobile={isMobile}
         />
       )}
@@ -491,9 +497,9 @@ function SS({ value, onChange, options }) {
   )
 }
 
-function ListPanel({ paged, filtered, statCnt, allData, page, setPage, totalPages, fText, setFText, fStatus, setFStatus, fPref, setFPref, fCity, setFCity, fMember, setFMember, fChain, setFChain, fRxMin, setFRxMin, cities, members, sel, setSel, selP, selC, eMemo, setEMemo, eNext, setENext, setStatus, setAssignee, saveMemo, toggleLock, showAdv, setShowAdv, isMobile }) {
+function ListPanel({ paged, filtered, statCnt, allData, page, setPage, totalPages, fText, setFText, fStatus, setFStatus, fPref, setFPref, fCity, setFCity, fMember, setFMember, fChain, setFChain, fRxMin, setFRxMin, cities, members, sel, setSel, selP, selC, eMemo, setEMemo, eNext, setENext, setStatus, setAssignee, setDivision, saveMemo, toggleLock, showAdv, setShowAdv, isMobile }) {
   if (isMobile && sel && selP && selC) {
-    return <DetailView p={selP} c={selC} eMemo={eMemo} setEMemo={setEMemo} eNext={eNext} setENext={setENext} setStatus={setStatus} setAssignee={setAssignee} saveMemo={saveMemo} toggleLock={toggleLock} members={members} onClose={()=>setSel(null)} isMobile={true}/>
+    return <DetailView p={selP} c={selC} eMemo={eMemo} setEMemo={setEMemo} eNext={eNext} setENext={setENext} setStatus={setStatus} setAssignee={setAssignee} setDivision={setDivision} saveMemo={saveMemo} toggleLock={toggleLock} members={members} onClose={()=>setSel(null)} isMobile={true}/>
   }
   return (
     <div style={{ display:'flex', height:'calc(100vh - 82px)' }}>
@@ -575,7 +581,7 @@ function ListPanel({ paged, filtered, statCnt, allData, page, setPage, totalPage
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr style={{ background:'#0b1221', position:'sticky', top:0, zIndex:2 }}>
-                  {['','薬局名','社名','都道府県','電話番号','処方箋','ステータス','担当者','最終架電'].map(h=>(
+                  {['','薬局名','社名','都道府県','電話番号','処方箋','区分','ステータス','担当者','最終架電'].map(h=>(
                     <th key={h} style={{ padding:'7px 8px', textAlign:'left', fontSize:9, fontWeight:700, color:'#2a3d60', borderBottom:'1px solid #1a2744', whiteSpace:'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -593,6 +599,7 @@ function ListPanel({ paged, filtered, statCnt, allData, page, setPage, totalPage
                       <td style={{ padding:'6px 8px', fontSize:11, color:'#4a6490' }}>{p.pref}</td>
                       <td style={{ padding:'6px 8px', fontSize:11, color:'#4a6490', fontFamily:'monospace' }}>{p.phone||'—'}</td>
                       <td style={{ padding:'6px 8px', fontSize:11, color:'#34d399' }}>{p.rx_count?Number(p.rx_count).toLocaleString():'-'}</td>
+                      <td style={{ padding:'6px 4px' }}>{c.division&&<span style={{ padding:'2px 5px', borderRadius:4, background:STATUSES[c.division]?.bg, color:STATUSES[c.division]?.bright, fontSize:9, fontWeight:700, border:`1px solid ${STATUSES[c.division]?.color}44` }}>{STATUS_ICONS[c.division]} {c.division}</span>}</td>
                       <td style={{ padding:'6px 8px' }}><span style={{ padding:'2px 7px', borderRadius:4, background:st?.bg, color:st?.bright, fontSize:10, fontWeight:700, border:`1px solid ${st?.color}44` }}>{STATUS_ICONS[c.status]} {c.status}</span></td>
                       <td style={{ padding:'6px 8px', fontSize:11, color:c.assignee==='未割当'?'#2a3d60':'#7ab3ff' }}>{c.assignee}</td>
                       <td style={{ padding:'6px 8px', fontSize:10, color:'#2a3d60' }}>{c.last_call||'—'}</td>
@@ -606,13 +613,13 @@ function ListPanel({ paged, filtered, statCnt, allData, page, setPage, totalPage
         )}
       </div>
       {!isMobile && sel && selP && selC && (
-        <DetailView p={selP} c={selC} eMemo={eMemo} setEMemo={setEMemo} eNext={eNext} setENext={setENext} setStatus={setStatus} setAssignee={setAssignee} saveMemo={saveMemo} toggleLock={toggleLock} members={members} onClose={()=>setSel(null)} isMobile={false}/>
+        <DetailView p={selP} c={selC} eMemo={eMemo} setEMemo={setEMemo} eNext={eNext} setENext={setENext} setStatus={setStatus} setAssignee={setAssignee} setDivision={setDivision} saveMemo={saveMemo} toggleLock={toggleLock} members={members} onClose={()=>setSel(null)} isMobile={false}/>
       )}
     </div>
   )
 }
 
-function DetailView({ p, c, eMemo, setEMemo, eNext, setENext, setStatus, setAssignee, saveMemo, toggleLock, members, onClose, isMobile }) {
+function DetailView({ p, c, eMemo, setEMemo, eNext, setENext, setStatus, setAssignee, setDivision, saveMemo, toggleLock, members, onClose, isMobile }) {
   const st = STATUSES[c.status] || STATUSES['未着手']
   return (
     <div style={{ width:isMobile?'100%':'45%', display:'flex', flexDirection:'column', background:'#0b1221', overflowY:'auto', ...(isMobile?{minHeight:'calc(100vh - 82px)'}:{}) }}>
@@ -639,10 +646,34 @@ function DetailView({ p, c, eMemo, setEMemo, eNext, setENext, setStatus, setAssi
         </div>
       </div>
       <div style={{ padding:'14px 18px', display:'flex', flexDirection:'column', gap:14 }}>
-        {/* ③ 3段階ステータス選択 */}
+        {/* A. 区分（独立して保存） */}
         <div>
-          <div style={{ fontSize:9, color:'#2a3d60', fontWeight:800, letterSpacing:'0.1em', marginBottom:8, textTransform:'uppercase' }}>ステータス変更</div>
-          <StatusSelector current={c.status} onSelect={s=>setStatus(p.id,s)} isMobile={isMobile}/>
+          <div style={{ fontSize:9, color:'#3b5280', fontWeight:800, marginBottom:6 }}>A. 区分</div>
+          <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+            {['売手','買手','M&A済み'].map(s=>{ const c2=STATUSES[s]; const on=c.division===s; return (
+              <button key={s} onClick={()=>setDivision(p.id, c.division===s?'':s)} style={{ padding:'4px 9px', borderRadius:6, border:`1.5px solid ${on?c2.color:'#1a2744'}`, background:on?c2.bg:'transparent', color:on?c2.bright:'#3b5280', fontSize:11, fontWeight:700, cursor:'pointer' }}>
+                {STATUS_ICONS[s]} {s}
+              </button>
+            )})}
+          </div>
+        </div>
+        {/* B. ステータス（独立して保存） */}
+        <div>
+          <div style={{ fontSize:9, color:'#3b5280', fontWeight:800, marginBottom:6 }}>B. ステータス</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            {[['ステータス',['未着手']],['受付',['不在','着信拒否','受付ブロック','折返し待ち']],['社長接続',['多忙','関心無し','関心有り','アポ取得']],['架電NG',['進行中','クレーム有','要注意']]].map(([grp,sts])=>(
+              <div key={grp}>
+                <div style={{ fontSize:8, color:'#2a3d60', marginBottom:4 }}>{grp==='ステータス'?'基本':grp==='受付'?'架電済（受付）':grp==='社長接続'?'架電済（社長接続）':'架電NG'}</div>
+                <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
+                  {sts.map(s=>{ const c2=STATUSES[s]; const on=c.status===s; return (
+                    <button key={s} onClick={()=>setStatus(p.id,s)} style={{ padding:'4px 8px', borderRadius:6, border:`1.5px solid ${on?c2.color:'#1a2744'}`, background:on?c2.bg:'transparent', color:on?c2.bright:'#3b5280', fontSize:11, fontWeight:700, cursor:'pointer' }}>
+                      {STATUS_ICONS[s]} {s}
+                    </button>
+                  )})}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
         {/* C. 担当者 */}
         <div>
