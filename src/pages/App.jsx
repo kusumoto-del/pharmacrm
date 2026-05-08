@@ -254,8 +254,8 @@ export default function App({ user }) {
     await syncDB(sel, { memo: eMemo, next_action: eNext })
   }, [sel, eMemo, eNext, updateLocal, syncDB])
 
-  // エリアマップ → 架電リスト一括連動（ロック除外）
-  const applyPrefToList = useCallback(async (prefName, memberName) => {
+  // 架電リスト一括連動（ロック除外）+ エリアマップも同期
+  const applyPrefToList = useCallback(async (prefName, memberName, updateAreaMap = false) => {
     const targets = allDataRef.current.filter(({ p, c }) => p.pref === prefName && !c.locked)
     if (!targets.length) return
     setAllData(prev => prev.map(r => {
@@ -272,7 +272,19 @@ export default function App({ user }) {
       const { error } = await supabase.from('call_records').upsert(batch, { onConflict: 'pharmacy_id' })
       if (error) console.error('applyPref error:', error)
     }
-  }, [])
+    // エリアマップも同期（一括操作時のみ）
+    if (updateAreaMap) {
+      const topoId = PREF_TO_TOPO_ID[prefName] || prefName
+      if (memberName && memberName !== '未割当') {
+        await supabase.from('pref_assignments')
+          .upsert({ pref_id: topoId, pref_name: prefName, member_name: memberName, updated_at: new Date().toISOString() }, { onConflict: 'pref_name' })
+        setAreaAssigns(prev => ({ ...prev, [prefName]: memberName }))
+      } else {
+        await supabase.from('pref_assignments').delete().eq('pref_name', prefName)
+        setAreaAssigns(prev => { const n = {...prev}; delete n[prefName]; return n })
+      }
+    }
+  }, [setAreaAssigns])
 
   const executeBulk = useCallback(async () => {
     if (!bulkAssignee && !bulkStatus && !bulkLock) return
@@ -298,9 +310,24 @@ export default function App({ user }) {
       }))
       await supabase.from('call_records').upsert(batch, { onConflict: 'pharmacy_id' })
     }
+    // 担当者を一括設定した場合、都道府県ごとにエリアマップも更新
+    if (bulkAssignee) {
+      const prefs = [...new Set(targets.map(r => r.p.pref))]
+      for (const pref of prefs) {
+        const topoId = PREF_TO_TOPO_ID[pref] || pref
+        if (bulkAssignee !== '未割当') {
+          await supabase.from('pref_assignments')
+            .upsert({ pref_id: topoId, pref_name: pref, member_name: bulkAssignee, updated_at: new Date().toISOString() }, { onConflict: 'pref_name' })
+          setAreaAssigns(prev => ({ ...prev, [pref]: bulkAssignee }))
+        } else {
+          await supabase.from('pref_assignments').delete().eq('pref_name', pref)
+          setAreaAssigns(prev => { const n = {...prev}; delete n[pref]; return n })
+        }
+      }
+    }
     setShowBulk(false); setBulkAssignee(''); setBulkStatus(''); setBulkLock('')
     alert(`${targets.length.toLocaleString()}件に一括設定しました`)
-  }, [filtered, bulkAssignee, bulkStatus, bulkLock])
+  }, [filtered, bulkAssignee, bulkStatus, bulkLock, setAreaAssigns])
 
   const addMember = async () => {
     if(!newMember.trim()) return
@@ -988,7 +1015,7 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
             if (!window.confirm(`エリアマップの全設定を架電リストに反映します。\n対象：${entries.length}都道府県 / ${targets.length.toLocaleString()}件\n（🔒ロック済みは除外）\nよろしいですか？`)) return
             setMsg('反映中...')
             for (const [prefName, memberName] of entries) {
-              await applyPrefToList(prefName, memberName)
+              await applyPrefToList(prefName, memberName, true)
             }
             setMsg(`✅ ${entries.length}都道府県 / ${targets.length.toLocaleString()}件を反映しました`)
             setTimeout(() => setMsg(''), 6000)
