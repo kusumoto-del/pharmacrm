@@ -1026,3 +1026,4 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
     </div>
   )
 }
+
