@@ -765,15 +765,12 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
     if (!d3 || !topo || !svgRef.current) return
     initRef.current = true
 
-    const proj = d3.geoMercator()
+    const proj = d3.geoMercator().center([136.5, 38]).scale(1550).translate([420, 380])
     const pg   = d3.geoPath(proj)
     const svg  = d3.select(svgRef.current)
 
     fetch(TOPO_URL).then(r => r.json()).then(jp => {
       const features = topo.feature(jp, jp.objects.jpn).features
-
-      // fitSizeで日本全体が900x780に収まるよう自動調整
-      proj.fitSize([900, 780], topo.feature(jp, jp.objects.jpn))
 
       // パス用レイヤーとラベル用レイヤーを分けて、ラベルを常に最前面に
       const pathLayer  = svg.append('g').attr('class', 'path-layer')
@@ -850,19 +847,20 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
           setTooltip(prev => ({ ...prev, visible: false }))
         })
 
-      // centroidが県外に出る県のオフセット調整（fitSize後の相対移動）
+      // centroidが県外に出る県のオフセット調整
       const LABEL_OFFSET = {
-        '山形県':   [0, 8],
-        '東京都':   [22, 0],
-        '千葉県':   [18, 6],
+        '山形県':   [0, 6],
+        '東京都':   [14, -2],
+        '千葉県':   [12, 6],
+        '神奈川県': [10, 4],
         '愛知県':   [0, 8],
-        '滋賀県':   [6, 0],
-        '京都府':   [-2, -10],
+        '滋賀県':   [4, -2],
+        '京都府':   [-2, -8],
+        '大阪府':   [0, 4],
         '岡山県':   [0, 6],
-        '福岡県':   [-8, 0],
-        '佐賀県':   [-10, 8],
-        '長崎県':   [-16, 10],
-        '神奈川県': [12, 2],
+        '福岡県':   [-6, 2],
+        '佐賀県':   [-8, 8],
+        '長崎県':   [-14, 10],
       }
       labelsRef.current = labelLayer.selectAll('.pl').data(features).join('text')
         .attr('class', 'pl')
@@ -973,7 +971,7 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
       <div ref={wrapRef} style={{ position:'relative', width:'100%', background:'#080e1a', borderRadius:8, overflow:'hidden', border:'1px solid #1a2744' }}>
         {!mapLoaded && !mapErr && <div style={{ padding:'40px', textAlign:'center', color:'#3b5280', fontSize:13 }}>地図を読み込み中...</div>}
         {mapErr && <div style={{ padding:'40px', textAlign:'center', color:'#ef4444', fontSize:13 }}>地図データの読み込みに失敗しました</div>}
-        <svg ref={svgRef} viewBox="0 0 900 780" style={{ width:'100%', display:'block' }}/>
+        <svg ref={svgRef} viewBox="0 0 800 680" style={{ width:'100%', display:'block' }}/>
         {tooltip.visible && tooltip.prefName && (
           <div style={{ position:'absolute', left:tooltip.x, top:tooltip.y, background:'#0d1829', border:'1px solid #2a3d60', borderRadius:8, padding:'6px 10px', pointerEvents:'none', zIndex:50, fontSize:12, whiteSpace:'nowrap' }}>
             <div style={{ fontWeight:700, color:'#e8f0ff', marginBottom:3 }}>
