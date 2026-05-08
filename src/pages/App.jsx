@@ -862,7 +862,7 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
         '埼玉県':[139.30,36.00],
         '千葉県':[140.40,35.45],
         '東京都':[139.70,35.70],
-        '神奈川県':[139.05,35.32],
+        '神奈川県':[138.95,35.30],
         '新潟県':[138.80,37.75],
         '富山県':[137.20,36.80],
         '石川県':[136.55,36.60],
@@ -872,17 +872,17 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
         '岐阜県':[136.90,35.75],
         '静岡県':[138.20,34.85],
         '愛知県':[137.10,35.00],
-        '三重県':[136.10,34.15],
+        '三重県':[136.30,34.10],
         '滋賀県':[136.20,35.15],
-        '京都府':[135.40,35.50],
+        '京都府':[135.35,35.55],
         '大阪府':[135.20,34.58],
-        '兵庫県':[134.45,34.95],
+        '兵庫県':[134.50,35.00],
         '奈良県':[136.00,34.30],
-        '和歌山県':[135.10,33.80],
+        '和歌山県':[135.40,33.75],
         '鳥取県':[133.80,35.52],
-        '島根県':[131.90,35.48],
-        '岡山県':[133.65,34.68],
-        '広島県':[132.10,34.42],
+        '島根県':[132.30,35.50],
+        '岡山県':[133.85,34.62],
+        '広島県':[132.50,34.38],
         '山口県':[131.50,34.15],
         '徳島県':[134.45,33.85],
         '香川県':[133.90,34.20],
@@ -902,7 +902,7 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
         .attr('x', d => proj(d[1])[0])
         .attr('y', d => proj(d[1])[1])
         .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
-        .attr('font-size', 5.5)
+        .attr('font-size', 5)
         .attr('font-family', "'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif")
         .attr('fill', '#5a8abf').attr('font-weight', '400')
         .attr('paint-order', 'stroke').attr('stroke', 'rgba(8,14,26,0.6)')
