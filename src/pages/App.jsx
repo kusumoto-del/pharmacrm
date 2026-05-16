@@ -7,7 +7,6 @@ import * as XLSX from 'xlsx'
 const PAGE = 100
 const PREFS = ['全て','北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県','新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県','愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県','和歌山県','鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県']
 
-// ── エリアマップ定数 ──
 const TOPO_ID_TO_PREF = {
   'JP.HK':'北海道','JP.AO':'青森県','JP.IW':'岩手県','JP.MG':'宮城県','JP.AK':'秋田県',
   'JP.YM':'山形県','JP.FS':'福島県','JP.IB':'茨城県','JP.TC':'栃木県','JP.GM':'群馬県',
@@ -39,7 +38,6 @@ Object.entries(REGION_PREFS).forEach(([r,ps])=>ps.forEach(p=>{PREF_REGION[p]=r})
 const UNASSIGNED_COLOR = '#1e2d45'
 const TOPO_URL = 'https://cdn.jsdelivr.net/npm/datamaps@0.5.10/src/js/data/jpn.topo.json'
 
-// 各都道府県の代表点（県庁所在地）の緯度経度
 const PREF_LONLAT = {
   '北海道':[142.80,43.20],'青森県':[140.74,40.60],'岩手県':[141.50,39.60],
   '宮城県':[141.10,38.20],'秋田県':[140.10,39.60],'山形県':[140.00,38.55],
@@ -104,20 +102,34 @@ export default function App({ user }) {
   const [eMemo,      setEMemo]      = useState('')
   const [eNext,      setENext]      = useState('')
   const [showImport, setShowImport] = useState(false)
-  const [showSettings,setShowSettings] = useState(false)
   const [showBulk,   setShowBulk]   = useState(false)
   const [showMenu,   setShowMenu]   = useState(false)
   const [showAdv,    setShowAdv]    = useState(false)
   const [members,    setMembers]    = useState([])
-  const [newMember,  setNewMember]  = useState('')
   const [memberColors, setMemberColors] = useState({})
   const [bulkAssignee,setBulkAssignee] = useState('')
   const [bulkStatus,  setBulkStatus]   = useState('')
   const [bulkLock,    setBulkLock]     = useState('')
   const [areaAssigns, setAreaAssigns]  = useState({})
+  // 🆕 権限管理
+  const [currentMember, setCurrentMember] = useState(null)
+  const [isAdmin,        setIsAdmin]       = useState(false)
+
   const saveTimer = useRef(null)
   const allDataRef = useRef([])
   useEffect(() => { allDataRef.current = allData }, [allData])
+
+  // 🆕 ログイン後に自分のroleを取得
+  useEffect(() => {
+    if (!user) return
+    supabase.from('members').select('*').eq('user_id', user.id).single()
+      .then(({ data }) => {
+        if (data) {
+          setCurrentMember(data)
+          setIsAdmin(data.role === 'admin')
+        }
+      })
+  }, [user])
 
   useEffect(() => {
     supabase.from('members').select('name,color').order('id').then(({ data }) => {
@@ -206,7 +218,6 @@ export default function App({ user }) {
     setAllData(prev => prev.map(r => r.p.id === id ? { ...r, c: { ...r.c, ...patch } } : r))
   }, [])
 
-  // ⑤ syncDBを確実に保存（updated_byなし・シンプル化）
   const syncDB = useCallback(async (id, patch) => {
     const ex = allDataRef.current.find(r => r.p.id === id)?.c || {}
     const record = {
@@ -254,7 +265,6 @@ export default function App({ user }) {
     await syncDB(sel, { memo: eMemo, next_action: eNext })
   }, [sel, eMemo, eNext, updateLocal, syncDB])
 
-  // 架電リスト一括連動（ロック除外）+ エリアマップも同期
   const applyPrefToList = useCallback(async (prefName, memberName, updateAreaMap = false) => {
     const targets = allDataRef.current.filter(({ p, c }) => p.pref === prefName && !c.locked)
     if (!targets.length) return
@@ -272,7 +282,6 @@ export default function App({ user }) {
       const { error } = await supabase.from('call_records').upsert(batch, { onConflict: 'pharmacy_id' })
       if (error) console.error('applyPref error:', error)
     }
-    // エリアマップも同期（一括操作時のみ）
     if (updateAreaMap) {
       const topoId = PREF_TO_TOPO_ID[prefName] || prefName
       if (memberName && memberName !== '未割当') {
@@ -310,7 +319,6 @@ export default function App({ user }) {
       }))
       await supabase.from('call_records').upsert(batch, { onConflict: 'pharmacy_id' })
     }
-    // 担当者を一括設定した場合、都道府県ごとにエリアマップも更新
     if (bulkAssignee) {
       const prefs = [...new Set(targets.map(r => r.p.pref))]
       for (const pref of prefs) {
@@ -329,20 +337,35 @@ export default function App({ user }) {
     alert(`${targets.length.toLocaleString()}件に一括設定しました`)
   }, [filtered, bulkAssignee, bulkStatus, bulkLock, setAreaAssigns])
 
-  const addMember = async () => {
-    if(!newMember.trim()) return
-    const colors = ['#3b82f6','#10b981','#f59e0b','#ef4444','#a855f7','#06b6d4','#f97316','#84cc16','#ec4899','#14b8a6']
-    const color = colors[members.length % colors.length]
-    await supabase.from('members').insert({ name: newMember.trim(), color })
-    setMembers(prev => [...prev, newMember.trim()])
-    setMemberColors(prev => ({ ...prev, [newMember.trim()]: color }))
-    setNewMember('')
-  }
-  const removeMember = async (m) => {
+  // 🆕 操作ログ記録
+  const logAction = useCallback(async (action, target) => {
+    if (!user) return
+    await supabase.from('operation_logs').insert({
+      user_id: user.id,
+      member_name: currentMember?.name || '',
+      action,
+      target: target || '',
+    })
+  }, [user, currentMember])
+
+  // 🆕 担当者追加（adminのみ）
+  const addMember = useCallback(async (name, color) => {
+    if (!name.trim() || !isAdmin) return
+    await supabase.from('members').insert({ name: name.trim(), color })
+    setMembers(prev => [...prev, name.trim()])
+    setMemberColors(prev => ({ ...prev, [name.trim()]: color }))
+    await logAction('担当者追加', name.trim())
+  }, [isAdmin, logAction])
+
+  // 🆕 担当者削除（adminのみ）
+  const removeMember = useCallback(async (m) => {
+    if (!isAdmin) return
     await supabase.from('members').delete().eq('name', m)
     setMembers(prev => prev.filter(x => x !== m))
     setMemberColors(prev => { const n = {...prev}; delete n[m]; return n })
-  }
+    await logAction('担当者削除', m)
+  }, [isAdmin, logAction])
+
   const logout = () => supabase.auth.signOut()
   const donePct = allData.length ? Math.round(allData.filter(r=>!['未着手'].includes(r.c.status)).length/allData.length*100) : 0
 
@@ -355,6 +378,13 @@ export default function App({ user }) {
       </div>
     </div>
   )
+
+  // タブ定義（adminのみ管理タブを追加）
+  const tabs = [
+    ['list','📋 架電リスト'],
+    ['dashboard','📊 ダッシュボード'],
+    ...(isAdmin ? [['admin','🔧 管理']] : []),
+  ]
 
   return (
     <div style={{ fontFamily:"'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif", background:'#080e1a', minHeight:'100vh', color:'#c8d4e8' }}>
@@ -374,15 +404,14 @@ export default function App({ user }) {
             </div>
           ) : (
             <div style={{ display:'flex', alignItems:'center', gap:7 }}>
-              {[['list','📋 架電リスト'],['dashboard','📊 ダッシュボード']].map(([t,l])=>(
-                <button key={t} onClick={()=>setTab(t)} style={{ padding:'6px 14px', borderRadius:6, border:'none', cursor:'pointer', fontSize:12, fontWeight:700, background:tab===t?'linear-gradient(135deg,#1d6aeb,#7c3aed)':'transparent', color:tab===t?'#fff':'#4a6490' }}>{l}</button>
+              {tabs.map(([t,l])=>(
+                <button key={t} onClick={()=>setTab(t)} style={{ padding:'6px 14px', borderRadius:6, border:'none', cursor:'pointer', fontSize:12, fontWeight:700, background:tab===t?'linear-gradient(135deg,#1d6aeb,#7c3aed)':'transparent', color:tab===t?'#fff':t==='admin'?'#a78bfa':'#4a6490' }}>{l}</button>
               ))}
               <div style={{ width:1, height:20, background:'#1a2744' }}/>
-              <button onClick={()=>setShowImport(true)} style={{ padding:'5px 12px', borderRadius:6, border:'1px solid #1a2744', cursor:'pointer', fontSize:11, fontWeight:700, background:'transparent', color:'#4a8aff' }}>📥 取込</button>
               <button onClick={()=>exportCSV(filtered)} style={{ padding:'5px 12px', borderRadius:6, border:'1px solid #1a2744', cursor:'pointer', fontSize:11, fontWeight:700, background:'transparent', color:'#34d399' }}>📤 CSV出力</button>
               <button onClick={()=>exportFormatExcel(filtered)} style={{ padding:'5px 12px', borderRadius:6, border:'1px solid #22c55e44', cursor:'pointer', fontSize:11, fontWeight:700, background:'rgba(34,197,94,0.1)', color:'#4ade80' }}>📊 定型出力</button>
               <button onClick={()=>setShowBulk(true)} style={{ padding:'5px 12px', borderRadius:6, border:'1px solid #f59e0b44', cursor:'pointer', fontSize:11, fontWeight:700, background:'rgba(245,158,11,0.1)', color:'#f59e0b' }}>⚡ 一括</button>
-              <button onClick={()=>setShowSettings(true)} style={{ padding:'5px 12px', borderRadius:6, border:'1px solid #1a2744', cursor:'pointer', fontSize:11, fontWeight:700, background:'transparent', color:'#94a3b8' }}>⚙️</button>
+              {isAdmin && <span style={{ fontSize:10, padding:'3px 8px', borderRadius:4, background:'rgba(167,139,250,0.15)', color:'#a78bfa', border:'1px solid #a78bfa44', fontWeight:700 }}>ADMIN</span>}
               <span style={{ fontSize:11, color:'#3b5280', padding:'4px 10px', borderRadius:6, background:'#0d1829', border:'1px solid #1a2744' }}>{allData.length.toLocaleString()}件</span>
               <button onClick={logout} style={{ padding:'5px 10px', borderRadius:6, border:'1px solid #1a2744', cursor:'pointer', fontSize:10, fontWeight:700, background:'transparent', color:'#3b5280' }}>ログアウト</button>
             </div>
@@ -390,15 +419,13 @@ export default function App({ user }) {
         </div>
         {isMobile && showMenu && (
           <div style={{ borderTop:'1px solid #1a2744', padding:'8px 0' }}>
-            {[['list','📋 架電リスト'],['dashboard','📊 ダッシュボード']].map(([t,l])=>(
-              <button key={t} onClick={()=>{setTab(t);setShowMenu(false)}} style={{ display:'block', width:'100%', padding:'11px 14px', border:'none', cursor:'pointer', fontSize:13, fontWeight:700, background:tab===t?'rgba(29,106,235,0.15)':'transparent', color:tab===t?'#60a5fa':'#94a3b8', textAlign:'left' }}>{l}</button>
+            {tabs.map(([t,l])=>(
+              <button key={t} onClick={()=>{setTab(t);setShowMenu(false)}} style={{ display:'block', width:'100%', padding:'11px 14px', border:'none', cursor:'pointer', fontSize:13, fontWeight:700, background:tab===t?'rgba(29,106,235,0.15)':'transparent', color:tab===t?'#60a5fa':t==='admin'?'#a78bfa':'#94a3b8', textAlign:'left' }}>{l}</button>
             ))}
             <div style={{ height:1, background:'#1a2744', margin:'4px 0' }}/>
-            <button onClick={()=>{setShowImport(true);setShowMenu(false)}} style={{ display:'block', width:'100%', padding:'11px 14px', border:'none', cursor:'pointer', fontSize:13, fontWeight:700, background:'transparent', color:'#4a8aff', textAlign:'left' }}>📥 CSV取込</button>
             <button onClick={()=>{exportCSV(filtered);setShowMenu(false)}} style={{ display:'block', width:'100%', padding:'11px 14px', border:'none', cursor:'pointer', fontSize:13, fontWeight:700, background:'transparent', color:'#34d399', textAlign:'left' }}>📤 CSV出力</button>
             <button onClick={()=>{exportFormatExcel(filtered);setShowMenu(false)}} style={{ display:'block', width:'100%', padding:'11px 14px', border:'none', cursor:'pointer', fontSize:13, fontWeight:700, background:'transparent', color:'#4ade80', textAlign:'left' }}>📊 定型出力</button>
             <button onClick={()=>{setShowBulk(true);setShowMenu(false)}} style={{ display:'block', width:'100%', padding:'11px 14px', border:'none', cursor:'pointer', fontSize:13, fontWeight:700, background:'transparent', color:'#f59e0b', textAlign:'left' }}>⚡ 一括設定</button>
-            <button onClick={()=>{setShowSettings(true);setShowMenu(false)}} style={{ display:'block', width:'100%', padding:'11px 14px', border:'none', cursor:'pointer', fontSize:13, fontWeight:700, background:'transparent', color:'#94a3b8', textAlign:'left' }}>⚙️ 担当者設定</button>
             <button onClick={logout} style={{ display:'block', width:'100%', padding:'11px 14px', border:'none', cursor:'pointer', fontSize:13, fontWeight:700, background:'transparent', color:'#ef4444', textAlign:'left' }}>🚪 ログアウト</button>
           </div>
         )}
@@ -413,6 +440,14 @@ export default function App({ user }) {
 
       {tab === 'dashboard' ? (
         <Dashboard allData={allData} statCnt={statCnt} members={members} memberColors={memberColors} isMobile={isMobile} areaAssigns={areaAssigns} setAreaAssigns={setAreaAssigns} applyPrefToList={applyPrefToList}/>
+      ) : tab === 'admin' && isAdmin ? (
+        <AdminPanel
+          members={members} memberColors={memberColors}
+          addMember={addMember} removeMember={removeMember}
+          setMembers={setMembers} setMemberColors={setMemberColors}
+          isMobile={isMobile} user={user}
+          onImportDone={()=>window.location.reload()}
+        />
       ) : (
         <ListPanel
           paged={paged} filtered={filtered} statCnt={statCnt} allData={allData}
@@ -427,8 +462,6 @@ export default function App({ user }) {
           showAdv={showAdv} setShowAdv={setShowAdv} isMobile={isMobile}
         />
       )}
-
-      {showImport && <ImportModal onClose={()=>setShowImport(false)} onDone={()=>{setShowImport(false);window.location.reload()}}/>}
 
       {showBulk && (
         <Modal onClose={()=>setShowBulk(false)} title="⚡ 一括設定">
@@ -456,23 +489,180 @@ export default function App({ user }) {
           </button>
         </Modal>
       )}
+    </div>
+  )
+}
 
-      {showSettings && (
-        <Modal onClose={()=>setShowSettings(false)} title="⚙️ 担当者設定">
-          <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:16, maxHeight:260, overflowY:'auto' }}>
+// 🆕 管理者専用パネル
+function AdminPanel({ members, memberColors, addMember, removeMember, setMembers, setMemberColors, isMobile, user, onImportDone }) {
+  const [newMember,   setNewMember]   = useState('')
+  const [newColor,    setNewColor]    = useState('#3b82f6')
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteName,  setInviteName]  = useState('')
+  const [inviteMsg,   setInviteMsg]   = useState('')
+  const [logs,        setLogs]        = useState([])
+  const [loginUsers,  setLoginUsers]  = useState([])
+  const [showImport,  setShowImport]  = useState(false)
+  const [activeSection, setActiveSection] = useState('members')
+
+  const colors = ['#3b82f6','#10b981','#f59e0b','#ef4444','#a855f7','#06b6d4','#f97316','#84cc16','#ec4899','#14b8a6']
+
+  useEffect(() => {
+    supabase.from('operation_logs').select('*').order('created_at', { ascending: false }).limit(50)
+      .then(({ data }) => { if (data) setLogs(data) })
+    supabase.from('members').select('id,name,color,user_id,role').order('id')
+      .then(({ data }) => { if (data) setLoginUsers(data) })
+  }, [])
+
+  const handleAddMember = async () => {
+    if (!newMember.trim()) return
+    await addMember(newMember.trim(), newColor)
+    setNewMember('')
+  }
+
+  const handleInvite = async () => {
+    if (!inviteEmail.trim() || !inviteName.trim()) { setInviteMsg('メールと紐づける担当者名を入力してください'); return }
+    const memberExists = members.includes(inviteName.trim())
+    if (!memberExists) { setInviteMsg('担当者名が一致しません。先に担当者を追加してください'); return }
+    const { error } = await supabase.auth.admin.inviteUserByEmail(inviteEmail.trim())
+    if (error) {
+      // admin APIが使えない場合はSignUpで代替
+      setInviteMsg('招待メール送信にはSupabase Service Role Keyが必要です。Supabaseダッシュボードから手動で招待してください。\n→ Authentication > Users > Invite user')
+      return
+    }
+    setInviteMsg(`✅ ${inviteEmail} に招待メールを送信しました`)
+    setInviteEmail(''); setInviteName('')
+  }
+
+  const handleColorChange = async (name, color) => {
+    await supabase.from('members').update({ color }).eq('name', name)
+    setMemberColors(prev => ({ ...prev, [name]: color }))
+  }
+
+  const sectionStyle = (key) => ({
+    padding:'10px 16px', borderRadius:8, border:'none', cursor:'pointer', fontSize:13, fontWeight:700,
+    background: activeSection===key ? 'rgba(29,106,235,0.2)' : 'transparent',
+    color: activeSection===key ? '#60a5fa' : '#4a6490',
+  })
+
+  return (
+    <div style={{ padding:isMobile?12:24, maxWidth:860, margin:'0 auto' }}>
+      <div style={{ fontSize:16, fontWeight:800, color:'#e8f0ff', marginBottom:20 }}>🔧 管理者パネル</div>
+
+      {/* セクション切り替え */}
+      <div style={{ display:'flex', gap:4, marginBottom:20, borderBottom:'1px solid #1a2744', paddingBottom:8, flexWrap:'wrap' }}>
+        {[['members','👥 担当者管理'],['invite','✉️ 招待'],['import','📥 インポート'],['logs','📋 操作ログ']].map(([k,l])=>(
+          <button key={k} onClick={()=>setActiveSection(k)} style={sectionStyle(k)}>{l}</button>
+        ))}
+      </div>
+
+      {/* 担当者管理 */}
+      {activeSection === 'members' && (
+        <div>
+          <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:20 }}>
             {members.filter(m=>m!=='未割当').map(m=>(
-              <div key={m} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', borderRadius:8, background:'#1a2744' }}>
-                <span style={{ fontSize:14, color:'#c8d4e8', fontWeight:600 }}>{m}</span>
-                <button onClick={()=>removeMember(m)} style={{ background:'none', border:'none', color:'#ef4444', cursor:'pointer', fontSize:18 }}>✕</button>
+              <div key={m} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 16px', borderRadius:10, background:'#0d1829', border:'1px solid #1a2744' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                  <span style={{ width:14, height:14, borderRadius:'50%', background:memberColors[m]||'#334155', display:'inline-block', flexShrink:0 }}/>
+                  <span style={{ fontSize:14, color:'#c8d4e8', fontWeight:600 }}>{m}</span>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                  <input type="color" value={memberColors[m]||'#3b82f6'} onChange={e=>handleColorChange(m,e.target.value)}
+                    style={{ width:30, height:30, border:'none', background:'none', cursor:'pointer', borderRadius:6 }}/>
+                  <button onClick={()=>removeMember(m)} style={{ background:'none', border:'1px solid #7f1d1d', borderRadius:6, color:'#ef4444', cursor:'pointer', fontSize:12, padding:'4px 10px', fontWeight:700 }}>削除</button>
+                </div>
               </div>
             ))}
           </div>
-          <div style={{ display:'flex', gap:8 }}>
-            <input value={newMember} onChange={e=>setNewMember(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addMember()} placeholder="担当者名を入力"
-              style={{ flex:1, padding:'10px 12px', borderRadius:8, border:'1px solid #1a2744', background:'#080e1a', color:'#c8d4e8', fontSize:14, outline:'none' }}/>
-            <button onClick={addMember} style={{ padding:'10px 16px', borderRadius:8, border:'none', background:'#1d6aeb', color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>追加</button>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+            <input value={newMember} onChange={e=>setNewMember(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleAddMember()} placeholder="担当者名を入力"
+              style={{ flex:1, minWidth:160, padding:'10px 12px', borderRadius:8, border:'1px solid #1a2744', background:'#080e1a', color:'#c8d4e8', fontSize:14, outline:'none' }}/>
+            <div style={{ display:'flex', gap:6 }}>
+              {colors.map(c=>(
+                <button key={c} onClick={()=>setNewColor(c)} style={{ width:22, height:22, borderRadius:'50%', background:c, border:newColor===c?'2px solid #fff':'2px solid transparent', cursor:'pointer' }}/>
+              ))}
+            </div>
+            <button onClick={handleAddMember} style={{ padding:'10px 18px', borderRadius:8, border:'none', background:'#1d6aeb', color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>追加</button>
           </div>
-        </Modal>
+        </div>
+      )}
+
+      {/* 招待 */}
+      {activeSection === 'invite' && (
+        <div style={{ display:'flex', flexDirection:'column', gap:14, maxWidth:480 }}>
+          <div style={{ padding:16, borderRadius:10, background:'#0d1829', border:'1px solid #1a2744', fontSize:12, color:'#4a6490', lineHeight:1.8 }}>
+            担当者に招待メールを送ります。担当者はリンクからアカウントを作成し、自動的にシステムに紐づけられます。
+          </div>
+          <div>
+            <div style={{ fontSize:11, color:'#4a6490', fontWeight:700, marginBottom:6 }}>招待するメールアドレス</div>
+            <input value={inviteEmail} onChange={e=>setInviteEmail(e.target.value)} placeholder="example@email.com"
+              style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #1a2744', background:'#080e1a', color:'#c8d4e8', fontSize:14, outline:'none', boxSizing:'border-box' }}/>
+          </div>
+          <div>
+            <div style={{ fontSize:11, color:'#4a6490', fontWeight:700, marginBottom:6 }}>紐づける担当者名</div>
+            <select value={inviteName} onChange={e=>setInviteName(e.target.value)}
+              style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #1a2744', background:'#080e1a', color:'#c8d4e8', fontSize:14, outline:'none', cursor:'pointer' }}>
+              <option value="">選択してください</option>
+              {members.filter(m=>m!=='未割当').map(m=><option key={m}>{m}</option>)}
+            </select>
+          </div>
+          <button onClick={handleInvite} style={{ padding:'12px', borderRadius:8, border:'none', background:'linear-gradient(135deg,#1d6aeb,#7c3aed)', color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>
+            ✉️ 招待メールを送信
+          </button>
+          {inviteMsg && (
+            <div style={{ padding:'10px 14px', borderRadius:8, background:'#0d1829', border:`1px solid ${inviteMsg.startsWith('✅')?'#22c55e44':'#f59e0b44'}`, fontSize:12, color:inviteMsg.startsWith('✅')?'#22c55e':'#f59e0b', whiteSpace:'pre-line', lineHeight:1.7 }}>
+              {inviteMsg}
+            </div>
+          )}
+          <div style={{ marginTop:8, padding:16, borderRadius:10, background:'#080e1a', border:'1px solid #1a2744', fontSize:12, color:'#3b5280', lineHeight:1.8 }}>
+            <div style={{ color:'#4a6490', fontWeight:700, marginBottom:6 }}>手動招待の手順（Supabaseダッシュボード）</div>
+            <div>① Supabase → Authentication → Users → Invite user</div>
+            <div>② 招待後、ログインしたユーザーのUIDをmembersテーブルのuser_idに設定</div>
+          </div>
+        </div>
+      )}
+
+      {/* インポート */}
+      {activeSection === 'import' && (
+        <div>
+          <div style={{ padding:16, borderRadius:10, background:'#0d1829', border:'1px solid #1a2744', fontSize:12, color:'#4a6490', marginBottom:16, lineHeight:1.8 }}>
+            Excel/CSVファイルから薬局データをインポートします。管理者のみ実行できます。
+          </div>
+          <button onClick={()=>setShowImport(true)} style={{ padding:'12px 24px', borderRadius:8, border:'none', background:'linear-gradient(135deg,#1d6aeb,#7c3aed)', color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>
+            📥 ファイルを選んでインポート
+          </button>
+          {showImport && <ImportModal onClose={()=>setShowImport(false)} onDone={()=>{setShowImport(false);onImportDone()}}/>}
+        </div>
+      )}
+
+      {/* 操作ログ */}
+      {activeSection === 'logs' && (
+        <div>
+          <div style={{ borderRadius:10, background:'#0d1829', border:'1px solid #1a2744', overflow:'hidden' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead>
+                <tr style={{ background:'#080e1a' }}>
+                  {['日時','担当者','操作','対象'].map(h=>(
+                    <th key={h} style={{ padding:'8px 12px', textAlign:'left', fontSize:10, color:'#2a3d60', fontWeight:700 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {logs.length === 0 && (
+                  <tr><td colSpan={4} style={{ padding:'24px', textAlign:'center', color:'#2a3d60', fontSize:12 }}>ログがありません</td></tr>
+                )}
+                {logs.map((log,i)=>(
+                  <tr key={log.id} style={{ borderTop:'1px solid #1a2744', background:i%2===0?'#0d1829':'#080e1a' }}>
+                    <td style={{ padding:'8px 12px', fontSize:11, color:'#4a6490' }}>{log.created_at ? new Date(log.created_at).toLocaleString('ja-JP') : '—'}</td>
+                    <td style={{ padding:'8px 12px', fontSize:11, color:'#7ab3ff' }}>{log.member_name||'—'}</td>
+                    <td style={{ padding:'8px 12px', fontSize:11, color:'#c8d4e8' }}>{log.action}</td>
+                    <td style={{ padding:'8px 12px', fontSize:11, color:'#4a6490' }}>{log.target||'—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -490,7 +680,6 @@ function Modal({ onClose, title, children }) {
   )
 }
 
-// ③ 3段階ステータス選択（区分・ステータス・担当者）
 function StatusSelector({ current, onSelect, isMobile }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
@@ -673,7 +862,6 @@ function DetailView({ p, c, eMemo, setEMemo, eNext, setENext, setStatus, setAssi
         </div>
       </div>
       <div style={{ padding:'14px 18px', display:'flex', flexDirection:'column', gap:14 }}>
-        {/* A. 区分（独立して保存） */}
         <div>
           <div style={{ fontSize:9, color:'#3b5280', fontWeight:800, marginBottom:6 }}>A. 区分</div>
           <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
@@ -684,7 +872,6 @@ function DetailView({ p, c, eMemo, setEMemo, eNext, setENext, setStatus, setAssi
             )})}
           </div>
         </div>
-        {/* B. ステータス（独立して保存） */}
         <div>
           <div style={{ fontSize:9, color:'#3b5280', fontWeight:800, marginBottom:6 }}>B. ステータス</div>
           <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
@@ -702,7 +889,6 @@ function DetailView({ p, c, eMemo, setEMemo, eNext, setENext, setStatus, setAssi
             ))}
           </div>
         </div>
-        {/* C. 担当者 */}
         <div>
           <div style={{ fontSize:9, color:'#3b5280', fontWeight:800, marginBottom:7 }}>C. 担当者</div>
           <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
@@ -869,7 +1055,6 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
             supabase.from('pref_assignments').delete().eq('pref_name', prefName)
           }
           setAreaAssigns(next)
-          // ④ ロック除外で架電リストに反映
           if (newMember && newMember !== '未割当') {
             applyPrefToList(prefName, newMember)
             setMsg(`${prefName} → 「${newMember}」に設定・架電リスト更新中...`)
@@ -897,7 +1082,6 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
           setTooltip(prev => ({ ...prev, visible: false }))
         })
 
-      // ラベル：緯度経度から正確に配置
       labelsRef.current = labelLayer.selectAll('.pl').data(Object.entries(PREF_LONLAT)).join('text')
         .attr('class', 'pl')
         .attr('x', d => proj(d[1])[0])
