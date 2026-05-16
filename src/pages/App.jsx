@@ -524,14 +524,31 @@ function AdminPanel({ members, memberColors, addMember, removeMember, setMembers
     if (!inviteEmail.trim() || !inviteName.trim()) { setInviteMsg('メールと紐づける担当者名を入力してください'); return }
     const memberExists = members.includes(inviteName.trim())
     if (!memberExists) { setInviteMsg('担当者名が一致しません。先に担当者を追加してください'); return }
-    const { error } = await supabase.auth.admin.inviteUserByEmail(inviteEmail.trim())
-    if (error) {
-      // admin APIが使えない場合はSignUpで代替
-      setInviteMsg('招待メール送信にはSupabase Service Role Keyが必要です。Supabaseダッシュボードから手動で招待してください。\n→ Authentication > Users > Invite user')
-      return
+    setInviteMsg('送信中...')
+    try {
+      const serviceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const res = await fetch(`${supabaseUrl}/auth/v1/invite`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({ email: inviteEmail.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.message || data.msg || '招待に失敗しました')
+      // 招待成功後にmembersテーブルのuser_idを紐づけ
+      const newUserId = data.id
+      if (newUserId) {
+        await supabase.from('members').update({ user_id: newUserId }).eq('name', inviteName.trim())
+      }
+      setInviteMsg(`✅ ${inviteEmail} に招待メールを送信しました。ログイン後に「${inviteName}」として紐づけられます。`)
+      setInviteEmail(''); setInviteName('')
+    } catch (e) {
+      setInviteMsg(`❌ エラー: ${e.message}`)
     }
-    setInviteMsg(`✅ ${inviteEmail} に招待メールを送信しました`)
-    setInviteEmail(''); setInviteName('')
   }
 
   const handleColorChange = async (name, color) => {
@@ -1218,4 +1235,3 @@ function AreaMap({ members, memberColors, allData, areaAssigns, setAreaAssigns, 
     </div>
   )
 }
-
